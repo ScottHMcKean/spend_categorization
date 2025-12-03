@@ -1,0 +1,317 @@
+# =============================================================================
+# Spend Categorization Solution Accelerator - Configuration
+# =============================================================================
+
+# =============================================================================
+# COMPANY - Business Rules & Domain Configuration
+# =============================================================================
+company:
+  name: Borealis Wind Systems
+  industry: Wind turbine manufacturing
+
+  # Cost Centres
+  cost_centres:
+    - CC-100-Production
+    - CC-200-Maintenance
+    - CC-300-Engineering
+    - CC-400-IT
+    - CC-500-Sales
+    - CC-600-HR
+    - CC-700-Logistics
+    - CC-800-Admin
+    - CC-900-Projects
+
+  # Plants / Locations
+  plants:
+    - name: US-East Plant
+      id: PLANT-US-E
+      region: North America
+      country: USA
+    - name: US-West Plant
+      id: PLANT-US-W
+      region: North America
+      country: USA
+    - name: Germany-North
+      id: PLANT-DE-N
+      region: Europe
+      country: Germany
+    - name: Germany-South
+      id: PLANT-DE-S
+      region: Europe
+      country: Germany
+    - name: Vietnam Plant
+      id: PLANT-VN
+      region: Asia
+      country: Vietnam
+    - name: Brazil Plant
+      id: PLANT-BR
+      region: South America
+      country: Brazil
+
+  # Category Hierarchy
+  categories:
+    level1:
+      - Direct
+      - Indirect
+      - Non-Procureable
+
+    level2:
+      Direct:
+        - Raw Materials
+        - Components
+        - Sub-Assemblies
+        - Packaging Materials
+        - Blades & Hub Parts
+        - Electrical Assemblies
+        - Hydraulic Systems
+        - Bearings & Seals
+        - Fasteners
+        - Castings & Forgings
+
+      Indirect:
+        - MRO (Maintenance, Repair, Operations)
+        - IT & Software
+        - Facilities & Utilities
+        - Logistics & Freight
+        - Professional Services
+        - Office Supplies
+        - Training & HR
+        - Travel & Entertainment
+        - Temporary Labor / Contracting
+        - Safety & PPE
+        - Marketing & Advertising
+        - Telecom & Connectivity
+        - Subscriptions & Data Services
+        - Cleaning & Janitorial
+        - Security Services
+        - Rent & Leases
+        - Recruitment Services
+        - Events & Conferences
+
+      Non-Procureable:
+        - Payroll
+        - Government Services & Taxes
+        - Finance Charges
+        - Miscellaneous Expenses
+
+    level3:
+      Direct:
+        Raw Materials:
+          - Structural steel plate
+          - Aluminum ingot
+          - Epoxy resin
+          - Copper wire
+        Components:
+          - Gearmotor
+          - Control PCB
+          - Relay module
+          - Industrial fan
+        Sub-Assemblies:
+          - Blade assembly
+          - Nacelle subsystem
+          - Yaw module
+        Packaging Materials:
+          - Wooden pallet
+          - Stretch film
+          - Export crate
+        Blades & Hub Parts:
+          - Blade shear web
+          - Pitch bearing
+          - Hub flange
+        Electrical Assemblies:
+          - Control cabinet
+          - Main breaker
+          - Grounding busbar
+        Hydraulic Systems:
+          - Hydraulic pump
+          - Hydraulic cylinder
+          - Hydraulic filter
+        Bearings & Seals:
+          - Spherical roller bearing
+          - Deep groove ball bearing
+          - Oil seal
+        Fasteners:
+          - High-tensile bolt
+          - Locknut
+          - Threaded rod
+        Castings & Forgings:
+          - Gear blank
+          - Housing casting
+          - Tower flange
+
+      Indirect:
+        MRO (Maintenance, Repair, Operations):
+          - Tool rental
+          - Cleaning solvent
+          - Vacuum pump
+          - Air filter
+        IT & Software:
+          - CAD license
+          - Cloud storage
+          - Engineering workstation
+          - Firewall subscription
+        Facilities & Utilities:
+          - Electricity
+          - Water & sewage
+          - Building repair
+          - Facility landscaping
+        Logistics & Freight:
+          - Air freight
+          - Ocean freight
+          - Local courier
+          - Container rental
+        Professional Services:
+          - Legal advice
+          - Audit fee
+          - Engineering consulting
+          - Management consulting
+        Office Supplies:
+          - Printer paper
+          - Desk chair
+          - Toner cartridge
+          - Notebook
+        Training & HR:
+          - Forklift certification course
+          - Safety workshop
+          - Leadership training
+        Travel & Entertainment:
+          - Airfare
+          - Hotel
+          - Taxi/ride share
+          - Group meal
+        Temporary Labor / Contracting:
+          - Site labor hire
+          - Crane rental crew
+          - Temporary electrician
+        Safety & PPE:
+          - Hardhat
+          - Hearing protection
+          - Nitrile gloves
+          - High-vis jacket
+        Marketing & Advertising:
+          - Trade show booth
+          - Digital ad spend
+          - Promotional items
+        Telecom & Connectivity:
+          - Mobile phone plan
+          - Internet service
+          - VOIP subscription
+        Subscriptions & Data Services:
+          - Market data feed
+          - Industry standards subscription
+        Cleaning & Janitorial:
+          - Janitorial service
+          - Cleaning chemicals
+          - Waste bin liners
+        Security Services:
+          - On-site guard service
+          - Alarm monitoring
+        Rent & Leases:
+          - Warehouse lease
+          - Office rent
+        Recruitment Services:
+          - Agency placement fee
+          - Background check
+        Events & Conferences:
+          - Conference registration
+          - Sponsorship fee
+          - Event catering
+
+      Non-Procureable:
+        Payroll:
+          - Production wages
+          - Management salaries
+          - Shift premiums
+        Government Services & Taxes:
+          - Income tax
+          - Property tax
+          - Regulatory fee
+        Finance Charges:
+          - Loan interest
+          - Bank fees
+          - Late payment penalty
+        Miscellaneous Expenses:
+          - Small write-off
+          - Rounding adjustment
+
+# =============================================================================
+# APP - Streamlit Application Configuration
+# =============================================================================
+app:
+  # Application Mode - Set to true for demo mode (no Databricks connection required)
+  demo_mode: true
+
+  # Databricks Connection Settings
+  databricks:
+    server_hostname: "your-workspace.cloud.databricks.com"
+    http_path: "/sql/1.0/warehouses/your-warehouse-id"
+    access_token: "your-access-token"
+    catalog: "main"
+    schema: "default"
+
+  # Table Configuration
+  tables:
+    invoices: "invoices"
+    corrections: "invoice_corrections"
+    flagged_view: "flagged_invoices_view"
+
+  # UI Settings
+  ui:
+    title: "Spend Categorization"
+    icon: "databricks"
+    page_size: 50
+    default_user: "user"
+
+  # Search Configuration
+  search:
+    default_fields:
+      - "invoice_number"
+      - "vendor_name"
+      - "description"
+    max_results: 500
+
+  # Flagging Rules (only used if custom flagged_view is not set)
+  flagging:
+    low_confidence_threshold: 0.7
+    critical_confidence_threshold: 0.5
+
+# =============================================================================
+# DATA_GENERATION - Synthetic Data Generation Configuration
+# =============================================================================
+data_generation:
+  # Output settings
+  rows: 10000
+
+  # Date range for generated transactions
+  date_range:
+    start: 2024-01-01
+    end: 2025-12-31
+
+  # Distribution of Level 1 categories
+  distribution:
+    Direct: 0.4
+    Indirect: 0.55
+    Non-Procureable: 0.05
+
+  # Schema for generated data
+  schema:
+    columns:
+      - date
+      - supplier
+      - supplier_id
+      - order
+      - order_id
+      - category_level_1
+      - category_level_2
+      - category_level_3
+      - cost_centre
+      - plant
+      - plant_id
+      - region
+      - country
+      - description
+      - reviewer_comments
+      - amount
+      - unit_price
+      - unit
+      - total
