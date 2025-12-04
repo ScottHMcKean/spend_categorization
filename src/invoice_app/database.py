@@ -1,65 +1,61 @@
-"""Database connection and query execution for Databricks."""
-
-from typing import Any, Dict, List, Optional
+import logging
+import uuid
+import psycopg2
+import psycopg2.extras
+from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
+from databricks.sdk import WorkspaceClient
+from datetime import datetime, timezone
 
-import pandas as pd
-from databricks import sql
+# SQLAlchemy imports for schema-based operations
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from .schema import Base, User, Document, DocumentChunk, Conversation, Message
 
-from .config import DatabricksConfig
-
-
-@contextmanager
-def get_connection(config: DatabricksConfig):
-    """Create a Databricks SQL connection context manager."""
-    connection = sql.connect(
-        server_hostname=config.server_hostname,
-        http_path=config.http_path,
-        access_token=config.access_token,
-    )
-    try:
-        yield connection
-    finally:
-        connection.close()
+logger = logging.getLogger(__name__)
 
 
-def execute_query(
-    config: DatabricksConfig,
-    query: str,
-    parameters: Optional[Dict[str, Any]] = None,
-) -> pd.DataFrame:
-    """Execute a query and return results as a DataFrame."""
-    with get_connection(config) as conn:
-        cursor = conn.cursor()
-        cursor.execute(query, parameters or {})
+class DatabaseService:
+    """Simplified database service using direct psycopg2 connections."""
 
-        # Fetch results and column names
-        results = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        cursor.close()
+    def __init__(self, client: Optional[WorkspaceClient], config: dict):
+        self.client = client
+        self.config = config
 
-        return pd.DataFrame(results, columns=columns)
+    @contextmanager
+    def get_connection(self):
+        """Get a database connection using the simple psycopg2 pattern."""
+        try:
+            # Get database instance name from config
+            instance_name = self.config.get("database.instance_name")
+            user = self.config.get("database.user", "databricks")
+            database = self.config.get("database.database", "databricks_postgres")
 
+            if not instance_name:
+                logger.error("No database instance_name configured")
+                yield None
+                return
 
-def execute_write(
-    config: DatabricksConfig,
-    query: str,
-    parameters: Optional[Dict[str, Any]] = None,
-) -> None:
-    """Execute a write query (INSERT, UPDATE, etc.)."""
-    with get_connection(config) as conn:
-        cursor = conn.cursor()
-        cursor.execute(query, parameters or {})
-        cursor.close()
+            # Get database instance from Databricks (following the user's example)
+            instance = self.client.database.get_database_instance(name=instance_name)
+            cred = self.client.database.generate_database_credential(
+                request_id=str(uuid.uuid4()), instance_names=[instance_name]
+            )
 
+            # Create psycopg2 connection (following the user's example)
+            conn = psycopg2.connect(
+                host=instance.read_write_dns,
+                dbname=database,
+                user=user,
+                password=cred.token,
+                sslmode="require",
+            )
 
-def execute_batch_write(
-    config: DatabricksConfig,
-    query: str,
-    batch_parameters: List[Dict[str, Any]],
-) -> None:
-    """Execute a batch write query with multiple parameter sets."""
-    with get_connection(config) as conn:
-        cursor = conn.cursor()
-        cursor.executemany(query, batch_parameters)
-        cursor.close()
+            try:
+                yield conn
+            finally:
+                conn.close()
+
+        except Exception as e:
+            logger.error(f"Failed to create database connection: {str(e)}")
+            yield None

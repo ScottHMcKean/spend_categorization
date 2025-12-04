@@ -1,34 +1,55 @@
 [project]
 name = "spend-categorization"
 version = "0.1.0"
-description = "Invoice classification correction tool with Databricks integration"
+description = "Invoice spend classification with Databricks"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
-    "databricks-sql-connector>=3.0.0",
+    "databricks-sdk>=0.18.0",
+    "databricks-connect==16.3.2",
+    "mlflow>=3.4",
+    "pgvector",
+    "psycopg[binary,pool]>=3.1.0",
+    "psycopg2-binary>=2.9.0",
+    "asyncpg>=0.28.0",
+    "sqlalchemy>=2.0.0",
     "pandas>=2.0.0",
-    "pyarrow>=14.0.0",
+    "aiofiles",
     "pyyaml>=6.0.0",
+    "streamlit>=1.28.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
-    "pytest-mock>=3.12.0",
-    "ipykernel>=6.25.0",
-    "streamlit>=1.28.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.11.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "ipykernel"
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.black]
+line-length = 88
+target-version = ['py39']
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/invoice_app"]
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
-addopts = "-v --tb=short"
+pythonpath = [
+    "src/",
+]
+testpaths = [
+    "tests",
+]
 

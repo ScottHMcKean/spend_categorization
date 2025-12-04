@@ -1,15 +1,6 @@
-# =============================================================================
-# Spend Categorization Solution Accelerator - Configuration
-# =============================================================================
-
-# =============================================================================
-# COMPANY - Business Rules & Domain Configuration
-# =============================================================================
 company:
   name: Borealis Wind Systems
   industry: Wind turbine manufacturing
-
-  # Cost Centres
   cost_centres:
     - CC-100-Production
     - CC-200-Maintenance
@@ -20,8 +11,6 @@ company:
     - CC-700-Logistics
     - CC-800-Admin
     - CC-900-Projects
-
-  # Plants / Locations
   plants:
     - name: US-East Plant
       id: PLANT-US-E
@@ -47,271 +36,248 @@ company:
       id: PLANT-BR
       region: South America
       country: Brazil
-
-  # Category Hierarchy
   categories:
-    level1:
-      - Direct
-      - Indirect
-      - Non-Procureable
+    Direct:
+      Raw Materials:
+        - Structural steel plate
+        - Aluminum ingot
+        - Epoxy resin
+        - Copper wire
+      Components:
+        - Gearmotor
+        - Control PCB
+        - Relay module
+        - Industrial fan
+      Sub-Assemblies:
+        - Blade assembly
+        - Nacelle subsystem
+        - Yaw module
+      Packaging Materials:
+        - Wooden pallet
+        - Stretch film
+        - Export crate
+      Blades & Hub Parts:
+        - Blade shear web
+        - Pitch bearing
+        - Hub flange
+      Electrical Assemblies:
+        - Control cabinet
+        - Main breaker
+        - Grounding busbar
+      Hydraulic Systems:
+        - Hydraulic pump
+        - Hydraulic cylinder
+        - Hydraulic filter
+      Bearings & Seals:
+        - Spherical roller bearing
+        - Deep groove ball bearing
+        - Oil seal
+      Fasteners:
+        - High-tensile bolt
+        - Locknut
+        - Threaded rod
+      Castings & Forgings:
+        - Gear blank
+        - Housing casting
+        - Tower flange
+    Indirect:
+      MRO (Maintenance, Repair, Operations):
+        - Tool rental
+        - Cleaning solvent
+        - Vacuum pump
+        - Air filter
+      IT & Software:
+        - CAD license
+        - Cloud storage
+        - Engineering workstation
+        - Firewall subscription
+      Facilities & Utilities:
+        - Electricity
+        - Water & sewage
+        - Building repair
+        - Facility landscaping
+      Logistics & Freight:
+        - Air freight
+        - Ocean freight
+        - Local courier
+        - Container rental
+      Professional Services:
+        - Legal advice
+        - Audit fee
+        - Engineering consulting
+        - Management consulting
+        - IT consulting
+      Office Supplies:
+        - Printer paper
+        - Desk chair
+        - Toner cartridge
+        - Notebook
+      Training & HR:
+        - Forklift certification course
+        - Safety workshop
+        - Leadership training
+      Travel & Entertainment:
+        - Airfare
+        - Hotel
+        - Taxi/ride share
+        - Group meal
+      Temporary Labor / Contracting:
+        - Site labor hire
+        - Crane rental crew
+        - Temporary electrician
+      Safety & PPE:
+        - Hardhat
+        - Hearing protection
+        - Nitrile gloves
+        - High-vis jacket
+      Marketing & Advertising:
+        - Trade show booth
+        - Digital ad spend
+        - Promotional items
+      Telecom & Connectivity:
+        - Mobile phone plan
+        - Internet service
+        - VOIP subscription
+      Subscriptions & Data Services:
+        - Market data feed
+        - Industry standards subscription
+      Cleaning & Janitorial:
+        - Janitorial service
+        - Cleaning chemicals
+        - Waste bin liners
+      Security Services:
+        - On-site guard service
+        - Alarm monitoring
+      Rent & Leases:
+        - Warehouse lease
+        - Office rent
+      Recruitment Services:
+        - Agency placement fee
+        - Background check
+      Events & Conferences:
+        - Conference registration
+        - Sponsorship fee
+        - Event catering
+    Non-Procureable:
+      Payroll:
+        - Production wages
+        - Management salaries
+        - Shift premiums
+      Government Services & Taxes:
+        - Income tax
+        - Property tax
+        - Regulatory fee
+      Finance Charges:
+        - Loan interest
+        - Bank fees
+        - Late payment penalty
+      Miscellaneous Expenses:
+        - Small write-off
+        - Rounding adjustment
 
-    level2:
-      Direct:
-        - Raw Materials
-        - Components
-        - Sub-Assemblies
-        - Packaging Materials
-        - Blades & Hub Parts
-        - Electrical Assemblies
-        - Hydraulic Systems
-        - Bearings & Seals
-        - Fasteners
-        - Castings & Forgings
-
-      Indirect:
-        - MRO (Maintenance, Repair, Operations)
-        - IT & Software
-        - Facilities & Utilities
-        - Logistics & Freight
-        - Professional Services
-        - Office Supplies
-        - Training & HR
-        - Travel & Entertainment
-        - Temporary Labor / Contracting
-        - Safety & PPE
-        - Marketing & Advertising
-        - Telecom & Connectivity
-        - Subscriptions & Data Services
-        - Cleaning & Janitorial
-        - Security Services
-        - Rent & Leases
-        - Recruitment Services
-        - Events & Conferences
-
-      Non-Procureable:
-        - Payroll
-        - Government Services & Taxes
-        - Finance Charges
-        - Miscellaneous Expenses
-
-    level3:
-      Direct:
-        Raw Materials:
-          - Structural steel plate
-          - Aluminum ingot
-          - Epoxy resin
-          - Copper wire
-        Components:
-          - Gearmotor
-          - Control PCB
-          - Relay module
-          - Industrial fan
-        Sub-Assemblies:
-          - Blade assembly
-          - Nacelle subsystem
-          - Yaw module
-        Packaging Materials:
-          - Wooden pallet
-          - Stretch film
-          - Export crate
-        Blades & Hub Parts:
-          - Blade shear web
-          - Pitch bearing
-          - Hub flange
-        Electrical Assemblies:
-          - Control cabinet
-          - Main breaker
-          - Grounding busbar
-        Hydraulic Systems:
-          - Hydraulic pump
-          - Hydraulic cylinder
-          - Hydraulic filter
-        Bearings & Seals:
-          - Spherical roller bearing
-          - Deep groove ball bearing
-          - Oil seal
-        Fasteners:
-          - High-tensile bolt
-          - Locknut
-          - Threaded rod
-        Castings & Forgings:
-          - Gear blank
-          - Housing casting
-          - Tower flange
-
-      Indirect:
-        MRO (Maintenance, Repair, Operations):
-          - Tool rental
-          - Cleaning solvent
-          - Vacuum pump
-          - Air filter
-        IT & Software:
-          - CAD license
-          - Cloud storage
-          - Engineering workstation
-          - Firewall subscription
-        Facilities & Utilities:
-          - Electricity
-          - Water & sewage
-          - Building repair
-          - Facility landscaping
-        Logistics & Freight:
-          - Air freight
-          - Ocean freight
-          - Local courier
-          - Container rental
-        Professional Services:
-          - Legal advice
-          - Audit fee
-          - Engineering consulting
-          - Management consulting
-        Office Supplies:
-          - Printer paper
-          - Desk chair
-          - Toner cartridge
-          - Notebook
-        Training & HR:
-          - Forklift certification course
-          - Safety workshop
-          - Leadership training
-        Travel & Entertainment:
-          - Airfare
-          - Hotel
-          - Taxi/ride share
-          - Group meal
-        Temporary Labor / Contracting:
-          - Site labor hire
-          - Crane rental crew
-          - Temporary electrician
-        Safety & PPE:
-          - Hardhat
-          - Hearing protection
-          - Nitrile gloves
-          - High-vis jacket
-        Marketing & Advertising:
-          - Trade show booth
-          - Digital ad spend
-          - Promotional items
-        Telecom & Connectivity:
-          - Mobile phone plan
-          - Internet service
-          - VOIP subscription
-        Subscriptions & Data Services:
-          - Market data feed
-          - Industry standards subscription
-        Cleaning & Janitorial:
-          - Janitorial service
-          - Cleaning chemicals
-          - Waste bin liners
-        Security Services:
-          - On-site guard service
-          - Alarm monitoring
-        Rent & Leases:
-          - Warehouse lease
-          - Office rent
-        Recruitment Services:
-          - Agency placement fee
-          - Background check
-        Events & Conferences:
-          - Conference registration
-          - Sponsorship fee
-          - Event catering
-
-      Non-Procureable:
-        Payroll:
-          - Production wages
-          - Management salaries
-          - Shift premiums
-        Government Services & Taxes:
-          - Income tax
-          - Property tax
-          - Regulatory fee
-        Finance Charges:
-          - Loan interest
-          - Bank fees
-          - Late payment penalty
-        Miscellaneous Expenses:
-          - Small write-off
-          - Rounding adjustment
-
-# =============================================================================
-# APP - Streamlit Application Configuration
-# =============================================================================
+  category_cost_centre_mapping:
+    # Direct categories
+    Raw Materials: CC-100-Production
+    Components: CC-100-Production
+    Sub-Assemblies: CC-100-Production
+    Packaging Materials: CC-700-Logistics
+    Blades & Hub Parts: CC-300-Engineering
+    Electrical Assemblies: CC-100-Production
+    Hydraulic Systems: CC-100-Production
+    Bearings & Seals: CC-100-Production
+    Fasteners: CC-100-Production
+    Castings & Forgings: CC-100-Production
+    # Indirect categories
+    MRO (Maintenance, Repair, Operations): CC-200-Maintenance
+    IT & Software: CC-400-IT
+    Facilities & Utilities: CC-200-Maintenance
+    Logistics & Freight: CC-700-Logistics
+    Professional Services: CC-900-Projects
+    Office Supplies: CC-800-Admin
+    Training & HR: CC-600-HR
+    Travel & Entertainment: CC-800-Admin
+    Temporary Labor / Contracting: CC-200-Maintenance
+    Safety & PPE: CC-200-Maintenance
+    Marketing & Advertising: CC-500-Sales
+    Telecom & Connectivity: CC-400-IT
+    Subscriptions & Data Services: CC-400-IT
+    Cleaning & Janitorial: CC-800-Admin
+    Security Services: CC-800-Admin
+    Rent & Leases: CC-800-Admin
+    Recruitment Services: CC-600-HR
+    Events & Conferences: CC-500-Sales
+    # Non-Procureable categories
+    Payroll: CC-600-HR
+    Government Services & Taxes: CC-800-Admin
+    Finance Charges: CC-800-Admin
+    Miscellaneous Expenses: CC-800-Admin
 app:
-  # Application Mode - Set to true for demo mode (no Databricks connection required)
   demo_mode: true
-
-  # Databricks Connection Settings
   databricks:
     server_hostname: "your-workspace.cloud.databricks.com"
     http_path: "/sql/1.0/warehouses/your-warehouse-id"
     access_token: "your-access-token"
-    catalog: "main"
-    schema: "default"
-
-  # Table Configuration
+    catalog: "shm"
+    schema: "spend"
   tables:
     invoices: "invoices"
     corrections: "invoice_corrections"
     flagged_view: "flagged_invoices_view"
-
-  # UI Settings
   ui:
     title: "Spend Categorization"
     icon: "databricks"
     page_size: 50
     default_user: "user"
-
-  # Search Configuration
   search:
     default_fields:
       - "invoice_number"
       - "vendor_name"
       - "description"
     max_results: 500
-
-  # Flagging Rules (only used if custom flagged_view is not set)
   flagging:
     low_confidence_threshold: 0.7
     critical_confidence_threshold: 0.5
 
-# =============================================================================
-# DATA_GENERATION - Synthetic Data Generation Configuration
-# =============================================================================
 data_generation:
-  # Output settings
+  catalog: shm
+  schema: spend
+  llm_endpoint: databricks-gpt-oss-20b
+  table: transactions
   rows: 10000
-
-  # Date range for generated transactions
-  date_range:
-    start: 2024-01-01
-    end: 2025-12-31
-
-  # Distribution of Level 1 categories
+  start: 2024-01-01
+  end: 2025-12-31
   distribution:
-    Direct: 0.4
-    Indirect: 0.55
+    Direct: 0.6
+    Indirect: 0.35
     Non-Procureable: 0.05
+  python_columns:
+    - date
+    - order_id
+    - category_level_1
+    - category_level_2
+    - category_level_3
+    - cost_centre
+    - plant
+    - plant_id
+    - region
+    - amount
+    - unit_price
+    - total
+  llm_columns:
+    - supplier
+    - supplier_country
+    - description
+    - reviewer_comments
+  prompt: |
+    Generate these fields based on the provided information:
+    {
+      "supplier": "string (real company name, match category type and region)",
+      "supplier_country": "string (ISO country code)",
+      "description": "string (max 15 words, realistic for category)",
+    }
 
-  # Schema for generated data
-  schema:
-    columns:
-      - date
-      - supplier
-      - supplier_id
-      - order
-      - order_id
-      - category_level_1
-      - category_level_2
-      - category_level_3
-      - cost_centre
-      - plant
-      - plant_id
-      - region
-      - country
-      - description
-      - reviewer_comments
-      - amount
-      - unit_price
-      - unit
-      - total
+    Return a JSON object with supplier, supplier_country, description, ammount, unit_price, unit, and total.
+
+    Invoice Information:
+
+
