@@ -1,4 +1,17 @@
-"""Demo data generator for testing the UI without Databricks."""
+"""Demo data generator for testing the UI without Databricks.
+
+Note: This module is kept for backward compatibility.
+The new MockBackend in database.py provides the same functionality
+through the database abstraction layer.
+
+For new code, use:
+    from invoice_app.database import init_backend, get_backend
+    from invoice_app.config import AppConfig
+    
+    app_config = AppConfig(mode="test", ...)
+    init_backend(app_config)
+    backend = get_backend()
+"""
 
 import pandas as pd
 from datetime import datetime, timedelta
@@ -47,9 +60,9 @@ def generate_demo_invoices(count: int = 50) -> pd.DataFrame:
             confidence = 0.0
         
         invoices.append({
-            "invoice_id": f"DEMO-INV{i+1:04d}",
+            "invoice_id": f"INV{i+1:06d}",
             "invoice_number": f"2024-{i+1:04d}",
-            "transaction_id": f"DEMO-TXN{i+1:04d}",
+            "transaction_id": f"TXN{i+1:06d}",
             "vendor_name": vendor,
             "invoice_date": invoice_date.strftime("%Y-%m-%d"),
             "amount": amount,
@@ -109,6 +122,5 @@ def get_demo_categories() -> list:
         "Office Supplies", "Software", "Hardware", "Cloud Services",
         "Consulting", "Marketing", "Travel", "Utilities",
         "IT Services", "Professional Services", "Training",
+        "Raw Materials", "Components", "MRO", "Logistics & Freight",
     ]
-
-

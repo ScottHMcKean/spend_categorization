@@ -1,8 +1,8 @@
-"""Configuration management for Databricks connection."""
+"""Configuration management for database connections."""
 
 import os
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, Literal
 from pathlib import Path
 import yaml
 
@@ -31,8 +31,34 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
 
 @dataclass
+class LakebaseConfig:
+    """Configuration for Lakebase (PostgreSQL on Databricks) connection."""
+    
+    instance_name: str
+    database: str = "databricks_postgres"
+    user: str = "databricks"
+    schema: str = "public"
+    
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]) -> "LakebaseConfig":
+        """Load configuration from dictionary."""
+        lakebase_config = config.get("lakebase", {})
+        return cls(
+            instance_name=lakebase_config.get("instance_name", ""),
+            database=lakebase_config.get("database", "databricks_postgres"),
+            user=lakebase_config.get("user", "databricks"),
+            schema=lakebase_config.get("schema", "public"),
+        )
+    
+    def validate(self) -> None:
+        """Validate required configuration values."""
+        if not self.instance_name:
+            raise ValueError("lakebase.instance_name is required in config.yaml for prod mode")
+
+
+@dataclass
 class DatabricksConfig:
-    """Configuration for Databricks SQL connection."""
+    """Configuration for Databricks SQL connection (legacy, for warehouse queries)."""
     
     server_hostname: str
     http_path: str
@@ -70,7 +96,7 @@ class AppConfig:
     corrections_table: str
     flagged_invoices_view: Optional[str] = None
     page_size: int = 50
-    demo_mode: bool = False
+    mode: Literal["test", "prod"] = "test"
     default_user: str = "user"
     ui_title: str = "Invoice Classification Correction"
     ui_icon: str = "📊"
@@ -88,12 +114,17 @@ class AppConfig:
         search = config.get("search", {})
         flagging = config.get("flagging", {})
         
+        # Support both old demo_mode and new mode settings
+        mode = app.get("mode", "test")
+        if config.get("demo_mode", False):
+            mode = "test"
+        
         return cls(
             invoices_table=tables.get("invoices", "invoices"),
             corrections_table=tables.get("corrections", "invoice_corrections"),
             flagged_invoices_view=tables.get("flagged_view"),
             page_size=app.get("page_size", 50),
-            demo_mode=config.get("demo_mode", False),
+            mode=mode,
             default_user=app.get("default_user", "user"),
             ui_title=ui.get("title", "Invoice Classification Correction"),
             ui_icon=ui.get("icon", "📊"),
@@ -102,4 +133,19 @@ class AppConfig:
             low_confidence_threshold=flagging.get("low_confidence_threshold", 0.7),
             critical_confidence_threshold=flagging.get("critical_confidence_threshold", 0.5),
         )
-
+    
+    @property
+    def is_test_mode(self) -> bool:
+        """Check if running in test mode (no backend)."""
+        return self.mode == "test"
+    
+    @property
+    def is_prod_mode(self) -> bool:
+        """Check if running in prod mode (with Lakebase)."""
+        return self.mode == "prod"
+    
+    # Backward compatibility property
+    @property
+    def demo_mode(self) -> bool:
+        """Backward compatible property - returns True if in test mode."""
+        return self.is_test_mode

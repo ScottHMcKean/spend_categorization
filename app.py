@@ -3,25 +3,24 @@ Invoice Classification Correction Tool
 
 A Streamlit application for correcting invoice classifications with Databricks integration.
 Supports invoice search, flagged invoice review, and batch corrections with Type 2 SCD tracking.
+
+Modes:
+- test: Uses in-memory mock data (no database required)
+- prod: Uses Lakebase PostgreSQL on Databricks
 """
 
 import streamlit as st
 import pandas as pd
 from typing import List, Dict
 
-from invoice_app.config import load_config, DatabricksConfig, AppConfig
+from invoice_app.config import load_config, LakebaseConfig, AppConfig
+from invoice_app.database import init_backend, get_backend
 from invoice_app import (
     search_invoices,
     get_flagged_invoices,
     get_invoices_by_ids,
     get_available_categories,
     write_corrections_batch,
-)
-from invoice_app.demo_data import (
-    search_demo_invoices,
-    get_demo_flagged_invoices,
-    get_demo_invoices_by_ids,
-    get_demo_categories,
 )
 from invoice_app.ui_components import (
     render_invoice_table,
@@ -197,11 +196,14 @@ def initialize_session_state():
     if "available_categories" not in st.session_state:
         st.session_state.available_categories = []
 
-    if "db_config" not in st.session_state:
-        st.session_state.db_config = None
-
     if "app_config" not in st.session_state:
         st.session_state.app_config = None
+
+    if "lakebase_config" not in st.session_state:
+        st.session_state.lakebase_config = None
+
+    if "backend_initialized" not in st.session_state:
+        st.session_state.backend_initialized = False
 
     if "total_invoices_in_review" not in st.session_state:
         st.session_state.total_invoices_in_review = 0
@@ -217,13 +219,18 @@ def load_configurations():
         app_config = AppConfig.from_dict(config)
         st.session_state.app_config = app_config
 
-        # Only load and validate DB config if not in demo mode
-        if not app_config.demo_mode:
-            db_config = DatabricksConfig.from_dict(config)
-            db_config.validate()
-            st.session_state.db_config = db_config
+        # Load Lakebase config for prod mode
+        if app_config.is_prod_mode:
+            lakebase_config = LakebaseConfig.from_dict(config)
+            lakebase_config.validate()
+            st.session_state.lakebase_config = lakebase_config
         else:
-            st.session_state.db_config = None
+            st.session_state.lakebase_config = None
+
+        # Initialize the database backend
+        if not st.session_state.backend_initialized:
+            init_backend(app_config, st.session_state.lakebase_config)
+            st.session_state.backend_initialized = True
 
         return True
     except Exception as e:
@@ -234,13 +241,7 @@ def load_configurations():
 def load_available_categories():
     """Load available categories from the database or demo data."""
     try:
-        if st.session_state.app_config.demo_mode:
-            categories = get_demo_categories()
-        else:
-            categories = get_available_categories(
-                st.session_state.db_config,
-                st.session_state.app_config,
-            )
+        categories = get_available_categories(st.session_state.app_config)
         st.session_state.available_categories = categories
     except Exception as e:
         show_error_message(f"Failed to load categories: {str(e)}")
@@ -249,36 +250,29 @@ def load_available_categories():
 def handle_search(search_term: str, category_filter: str = None, limit: int = 50):
     """Handle invoice search."""
     try:
-        if st.session_state.app_config.demo_mode:
-            # In demo mode, if no search term, return first N invoices
-            if not search_term:
-                from invoice_app.demo_data import get_demo_data
-
-                results = get_demo_data().head(limit)
-            else:
-                results = search_demo_invoices(search_term, limit)
+        # Get backend for queries
+        backend = get_backend()
+        
+        if not search_term:
+            # Return first N invoices when no search term
+            results = search_invoices(
+                st.session_state.app_config,
+                search_term="",
+                limit=limit,
+            )
+            # For empty search, just get all (the query handles it)
+            if hasattr(backend, '_invoices'):
+                # MockBackend - get all invoices
+                results = backend._invoices.head(limit)
         else:
-            # In real mode, if no search term, just get first N invoices
-            if not search_term:
-                from invoice_app.database import execute_query
-
-                query = f"""
-                    SELECT *
-                    FROM {st.session_state.db_config.catalog}.{st.session_state.db_config.schema}.{st.session_state.app_config.invoices_table}
-                    ORDER BY invoice_date DESC
-                    LIMIT {limit}
-                """
-                results = execute_query(st.session_state.db_config, query)
-            else:
-                results = search_invoices(
-                    st.session_state.db_config,
-                    st.session_state.app_config,
-                    search_term=search_term,
-                    limit=limit,
-                )
+            results = search_invoices(
+                st.session_state.app_config,
+                search_term=search_term,
+                limit=limit,
+            )
 
         # Apply category filter if specified
-        if category_filter:
+        if category_filter and not results.empty:
             results = results[results["category"] == category_filter]
 
         st.session_state.search_results = results
@@ -295,14 +289,10 @@ def handle_search(search_term: str, category_filter: str = None, limit: int = 50
 def handle_load_flagged():
     """Handle loading flagged invoices."""
     try:
-        if st.session_state.app_config.demo_mode:
-            results = get_demo_flagged_invoices(st.session_state.app_config.page_size)
-        else:
-            results = get_flagged_invoices(
-                st.session_state.db_config,
-                st.session_state.app_config,
-                limit=st.session_state.app_config.page_size,
-            )
+        results = get_flagged_invoices(
+            st.session_state.app_config,
+            limit=st.session_state.app_config.page_size,
+        )
 
         st.session_state.flagged_results = results
 
@@ -325,16 +315,10 @@ def add_to_review_queue(invoice_ids: set):
 
     # Fetch full invoice details
     try:
-        if st.session_state.app_config.demo_mode:
-            review_df = get_demo_invoices_by_ids(
-                list(st.session_state.selected_for_review)
-            )
-        else:
-            review_df = get_invoices_by_ids(
-                st.session_state.db_config,
-                st.session_state.app_config,
-                list(st.session_state.selected_for_review),
-            )
+        review_df = get_invoices_by_ids(
+            st.session_state.app_config,
+            list(st.session_state.selected_for_review),
+        )
         st.session_state.review_invoices = review_df
 
         # Update total count when adding new invoices
@@ -347,17 +331,14 @@ def add_to_review_queue(invoice_ids: set):
 def handle_submit_corrections(corrections: List[Dict]):
     """Handle submission of invoice corrections."""
     try:
-        if st.session_state.app_config.demo_mode:
-            # In demo mode, just show success message
+        if st.session_state.app_config.is_test_mode:
+            # In test mode, show success message but still process through backend
+            write_corrections_batch(st.session_state.app_config, corrections)
             show_success_message(
-                f"[DEMO MODE] Successfully submitted {len(corrections)} correction(s)!"
+                f"[TEST MODE] Successfully submitted {len(corrections)} correction(s)!"
             )
         else:
-            write_corrections_batch(
-                st.session_state.db_config,
-                st.session_state.app_config,
-                corrections,
-            )
+            write_corrections_batch(st.session_state.app_config, corrections)
             show_success_message(
                 f"Successfully submitted {len(corrections)} correction(s)!"
             )
@@ -373,17 +354,10 @@ def handle_submit_corrections(corrections: List[Dict]):
 
         # Update review_invoices DataFrame
         if st.session_state.selected_for_review:
-            # Fetch updated invoice details for remaining invoices
-            if st.session_state.app_config.demo_mode:
-                review_df = get_demo_invoices_by_ids(
-                    list(st.session_state.selected_for_review)
-                )
-            else:
-                review_df = get_invoices_by_ids(
-                    st.session_state.db_config,
-                    st.session_state.app_config,
-                    list(st.session_state.selected_for_review),
-                )
+            review_df = get_invoices_by_ids(
+                st.session_state.app_config,
+                list(st.session_state.selected_for_review),
+            )
             st.session_state.review_invoices = review_df
         else:
             # All invoices processed, clear everything
@@ -409,6 +383,15 @@ def render_sidebar():
         st.image("assets/databricks_logo.svg", width=200)
 
         st.title("Spend Categorization")
+
+        st.divider()
+
+        # Mode indicator
+        mode = st.session_state.app_config.mode.upper()
+        if st.session_state.app_config.is_test_mode:
+            st.caption(f"🧪 Mode: **{mode}** (Mock Data)")
+        else:
+            st.caption(f"🏭 Mode: **{mode}** (Lakebase)")
 
         st.divider()
 
@@ -450,8 +433,8 @@ def main():
 
     initialize_session_state()
 
-    # Load configurations
-    if st.session_state.db_config is None:
+    # Load configurations and initialize backend
+    if st.session_state.app_config is None:
         if not load_configurations():
             st.stop()
 
@@ -463,9 +446,9 @@ def main():
     render_sidebar()
 
     # Main content area
-    if st.session_state.app_config.demo_mode:
+    if st.session_state.app_config.is_test_mode:
         st.info(
-            "**Demo Mode**: This is a demonstration using sample data. No actual database changes will be made."
+            "**Test Mode**: This is a demonstration using sample data. No actual database changes will be made."
         )
 
     # Create tabs for different views

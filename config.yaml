@@ -211,33 +211,59 @@ company:
     Government Services & Taxes: CC-800-Admin
     Finance Charges: CC-800-Admin
     Miscellaneous Expenses: CC-800-Admin
-app:
-  demo_mode: true
-  databricks:
-    server_hostname: "your-workspace.cloud.databricks.com"
-    http_path: "/sql/1.0/warehouses/your-warehouse-id"
-    access_token: "your-access-token"
-    catalog: "shm"
-    schema: "spend"
-  tables:
-    invoices: "invoices"
-    corrections: "invoice_corrections"
-    flagged_view: "flagged_invoices_view"
-  ui:
-    title: "Spend Categorization"
-    icon: "databricks"
-    page_size: 50
-    default_user: "user"
-  search:
-    default_fields:
-      - "invoice_number"
-      - "vendor_name"
-      - "description"
-    max_results: 500
-  flagging:
-    low_confidence_threshold: 0.7
-    critical_confidence_threshold: 0.5
 
+# Application configuration
+app:
+  # Mode: "test" (no backend, uses mock data) or "prod" (uses Lakebase PostgreSQL)
+  mode: test
+  page_size: 50
+  default_user: user
+
+# Lakebase (PostgreSQL on Databricks) configuration
+# Required when mode is "prod"
+lakebase:
+  # The name of your Lakebase instance in Databricks
+  instance_name: "your-lakebase-instance"
+  # Database name (defaults to databricks_postgres)
+  database: "spend_categorization"
+  # PostgreSQL user (defaults to databricks for OAuth)
+  user: "databricks"
+  # Schema for tables
+  schema: "public"
+
+# Legacy Databricks SQL Warehouse configuration (for data preparation notebooks)
+databricks:
+  server_hostname: "your-workspace.cloud.databricks.com"
+  http_path: "/sql/1.0/warehouses/your-warehouse-id"
+  access_token: "your-access-token"
+  catalog: "shm"
+  schema: "spend"
+
+# Table configuration
+tables:
+  invoices: "invoices"
+  corrections: "invoice_corrections"
+  flagged_view: null  # Optional: custom view for flagged invoices
+
+# UI configuration
+ui:
+  title: "Spend Categorization"
+  icon: "databricks"
+
+# Search configuration
+search:
+  default_fields:
+    - "invoice_number"
+    - "vendor_name"
+    - "description"
+  max_results: 500
+
+# Flagging configuration
+flagging:
+  low_confidence_threshold: 0.7
+  critical_confidence_threshold: 0.5
+
+# Data generation configuration (for notebooks)
 data_generation:
   catalog: shm
   schema: spend
@@ -279,5 +305,3 @@ data_generation:
     Return a JSON object with supplier, supplier_country, description, ammount, unit_price, unit, and total.
 
     Invoice Information:
-
-

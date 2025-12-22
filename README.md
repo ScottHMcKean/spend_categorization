@@ -60,22 +60,117 @@ This application follows a modular design pattern with clear separation of conce
 ```
 spend_categorization/
 ├── app.py                          # Main Streamlit application
-├── setup_database.py               # Database setup script
-├── generate_sample_data.py         # Sample data generator
-├── examples.py                     # Usage examples
-├── run.sh                          # Helper command script
-├── src/invoice_app/                # Reusable modules
-│   ├── __init__.py
-│   ├── config.py                   # Configuration management
-│   ├── database.py                 # Database connection utilities
-│   ├── queries.py                  # Invoice query functions
-│   ├── corrections.py              # Type 2 SCD write logic
-│   └── ui_components.py            # Streamlit UI components
+├── config.yaml                     # Application configuration
+├── src/
+│   ├── setup_database.py           # Database setup script
+│   └── invoice_app/                # Reusable modules
+│       ├── __init__.py
+│       ├── config.py               # Configuration (AppConfig, LakebaseConfig)
+│       ├── database.py             # Backend abstraction (MockBackend, LakebaseBackend)
+│       ├── queries.py              # Invoice query functions
+│       ├── corrections.py          # Type 2 SCD write logic
+│       ├── demo_data.py            # Demo data generators
+│       └── ui_components.py        # Streamlit UI components
 ├── tests/                          # Test suite
 │   ├── conftest.py                 # Pytest fixtures
-│   └── test_config.py              # Configuration tests
+│   ├── test_config.py              # Configuration tests
+│   └── test_database.py            # Database backend tests
+├── notebooks/
+│   └── 6_infrastructure_test.ipynb # Infrastructure verification notebook
 ├── pyproject.toml                  # Python dependencies
-└── .env.example                    # Environment configuration template
+└── config.yaml                     # Application configuration
+```
+
+#### Database Backend Abstraction
+
+The application uses a backend abstraction layer that supports multiple database backends:
+
+- **MockBackend**: In-memory storage for test mode, no external dependencies
+- **LakebaseBackend**: PostgreSQL on Databricks via psycopg2 with OAuth authentication
+
+---
+
+## Infrastructure Setup
+
+The application supports two operating modes:
+
+| Mode | Backend | Use Case |
+|------|---------|----------|
+| `test` | MockBackend (in-memory) | Local development, demos, UI testing |
+| `prod` | Lakebase (PostgreSQL on Databricks) | Production deployment with persistent storage |
+
+### Test Mode (Default)
+
+Test mode requires no database setup. It uses an in-memory mock backend with sample data:
+
+```bash
+# Run directly in test mode (default)
+uv run streamlit run app.py
+```
+
+### Prod Mode (Lakebase)
+
+Prod mode uses **Lakebase** (PostgreSQL on Databricks) for persistent storage.
+
+#### Step 1: Create a Lakebase Instance
+
+1. Navigate to the Lakebase App in your Databricks workspace
+2. Click "New project" to create a new Lakebase Postgres instance
+3. Note the instance name for configuration
+
+#### Step 2: Configure Lakebase Connection
+
+Update `config.yaml` with your Lakebase settings:
+
+```yaml
+app:
+  mode: prod  # Switch from 'test' to 'prod'
+
+lakebase:
+  instance_name: "your-lakebase-instance"  # Your Lakebase instance name
+  database: "spend_categorization"          # Database name
+  user: "databricks"                        # OAuth user (default)
+  schema: "public"                          # Schema for tables
+```
+
+#### Step 3: Initialize Database Tables
+
+Run the setup script to create tables and optionally load sample data:
+
+```bash
+# Check connection
+uv run python src/setup_database.py --check-connection
+
+# Initialize tables
+uv run python src/setup_database.py --init-tables
+
+# Initialize tables and load sample data
+uv run python src/setup_database.py --init-tables --load-sample-data --sample-count 500
+```
+
+#### Step 4: Run the Application
+
+```bash
+uv run streamlit run app.py
+```
+
+### Verifying Infrastructure Setup
+
+Use the included test notebook to verify all components are working:
+
+```bash
+# Open the infrastructure test notebook
+uv run jupyter lab 6_infrastructure_test.ipynb
+```
+
+Or run the automated tests:
+
+```bash
+# Run all tests
+uv run pytest tests/ -v
+
+# Run only infrastructure-related tests
+uv run pytest tests/test_database.py -v
 ```
 
 ---
@@ -351,10 +446,27 @@ uv run python examples.py
 
 This solution accelerator includes several notebooks demonstrating different approaches to spend categorization:
 
-- **0_eda.ipynb**: Exploratory data analysis of spend transactions
-- **1_batch_inference_naive.ipynb**: Naive batch inference approach
-- **2_batch_vector_search.ipynb**: Vector search-based categorization
-- **3_catboost.ipynb**: CatBoost model for spend categorization
+| Notebook | Description |
+|----------|-------------|
+| `0_generate_data.ipynb` | Generate synthetic spend transaction data |
+| `1_eda_prep.ipynb` | Exploratory data analysis and data preparation |
+| `2_pred_naive.ipynb` | Naive batch inference approach |
+| `3_optimizer_eval.ipynb` | Optimizer evaluation and hyperparameter tuning |
+| `4_vector_search.ipynb` | Vector search-based categorization |
+| `5_catboost.ipynb` | CatBoost model for spend categorization |
+| `6_infrastructure_test.ipynb` | **Infrastructure verification and testing** |
+
+### Infrastructure Test Notebook
+
+The `6_infrastructure_test.ipynb` notebook provides a comprehensive check of all components:
+
+1. **Configuration Loading**: Verifies config.yaml is properly loaded
+2. **Backend Initialization**: Tests MockBackend (test mode) and LakebaseBackend (prod mode)
+3. **Query Functions**: Validates search, flagged invoices, and category retrieval
+4. **Correction Functions**: Tests the Type 2 SCD write operations
+5. **Connection Verification**: For prod mode, verifies Lakebase connectivity
+
+Run this notebook before deploying to production to ensure all components are ready.
 
 ---
 
