@@ -2,7 +2,7 @@
 
 __version__ = "0.1.0"
 
-from .config import DatabricksConfig, AppConfig, LakebaseConfig, load_config
+from .config import Config, load_config
 from .database import (
     DatabaseBackend,
     MockBackend,
@@ -11,9 +11,6 @@ from .database import (
     get_backend,
     init_backend,
     reset_backend,
-    execute_query,
-    execute_write,
-    get_connection,
 )
 from .queries import (
     search_invoices,
@@ -31,10 +28,8 @@ from .corrections import (
 )
 
 __all__ = [
-    # Config classes
-    "DatabricksConfig",
-    "AppConfig",
-    "LakebaseConfig",
+    # Config
+    "Config",
     "load_config",
     # Database backend
     "DatabaseBackend",
@@ -44,9 +39,6 @@ __all__ = [
     "get_backend",
     "init_backend",
     "reset_backend",
-    "execute_query",
-    "execute_write",
-    "get_connection",
     # Query functions
     "search_invoices",
     "get_flagged_invoices",

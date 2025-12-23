@@ -215,24 +215,14 @@ company:
 # Application configuration
 app:
   # Mode: "test" (no backend, uses mock data) or "prod" (uses Lakebase PostgreSQL)
-  mode: test
+  mode: prod
   page_size: 50
   default_user: user
-
-# Lakebase (PostgreSQL on Databricks) configuration
-# Required when mode is "prod"
-lakebase:
-  # The name of your Lakebase instance in Databricks
-  instance_name: "your-lakebase-instance"
-  # Database name (defaults to databricks_postgres)
-  database: "spend_categorization"
-  # PostgreSQL user (defaults to databricks for OAuth)
-  user: "databricks"
-  # Schema for tables
-  schema: "public"
+  lakebase_instance: "shm"
+  lakebase_dbname: "databricks_postgres"
 
 # Legacy Databricks SQL Warehouse configuration (for data preparation notebooks)
-databricks:
+sql:
   server_hostname: "your-workspace.cloud.databricks.com"
   http_path: "/sql/1.0/warehouses/your-warehouse-id"
   access_token: "your-access-token"
@@ -243,7 +233,7 @@ databricks:
 tables:
   invoices: "invoices"
   corrections: "invoice_corrections"
-  flagged_view: null  # Optional: custom view for flagged invoices
+  flagged_view: null # Optional: custom view for flagged invoices
 
 # UI configuration
 ui:

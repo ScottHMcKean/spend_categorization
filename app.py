@@ -13,7 +13,7 @@ import streamlit as st
 import pandas as pd
 from typing import List, Dict
 
-from invoice_app.config import load_config, LakebaseConfig, AppConfig
+from invoice_app.config import load_config, Config
 from invoice_app.database import init_backend, get_backend
 from invoice_app import (
     search_invoices,
@@ -36,14 +36,13 @@ from invoice_app.ui_components import (
 # Load configuration first (before page config)
 try:
     _config = load_config()
-    _app_config_temp = AppConfig.from_dict(_config)
 except Exception as e:
     st.error(f"Failed to load configuration: {e}")
     st.stop()
 
 # Page configuration
 st.set_page_config(
-    page_title=_app_config_temp.ui_title,
+    page_title=_config.ui.title,
     page_icon="🧱",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -196,11 +195,8 @@ def initialize_session_state():
     if "available_categories" not in st.session_state:
         st.session_state.available_categories = []
 
-    if "app_config" not in st.session_state:
-        st.session_state.app_config = None
-
-    if "lakebase_config" not in st.session_state:
-        st.session_state.lakebase_config = None
+    if "config" not in st.session_state:
+        st.session_state.config = None
 
     if "backend_initialized" not in st.session_state:
         st.session_state.backend_initialized = False
@@ -216,20 +212,11 @@ def load_configurations():
     """Load database and application configurations."""
     try:
         config = load_config()
-        app_config = AppConfig.from_dict(config)
-        st.session_state.app_config = app_config
-
-        # Load Lakebase config for prod mode
-        if app_config.is_prod_mode:
-            lakebase_config = LakebaseConfig.from_dict(config)
-            lakebase_config.validate()
-            st.session_state.lakebase_config = lakebase_config
-        else:
-            st.session_state.lakebase_config = None
+        st.session_state.config = config
 
         # Initialize the database backend
         if not st.session_state.backend_initialized:
-            init_backend(app_config, st.session_state.lakebase_config)
+            init_backend(config)
             st.session_state.backend_initialized = True
 
         return True
@@ -241,7 +228,7 @@ def load_configurations():
 def load_available_categories():
     """Load available categories from the database or demo data."""
     try:
-        categories = get_available_categories(st.session_state.app_config)
+        categories = get_available_categories(st.session_state.config)
         st.session_state.available_categories = categories
     except Exception as e:
         show_error_message(f"Failed to load categories: {str(e)}")
@@ -250,26 +237,18 @@ def load_available_categories():
 def handle_search(search_term: str, category_filter: str = None, limit: int = 50):
     """Handle invoice search."""
     try:
-        # Get backend for queries
         backend = get_backend()
-        
+        config = st.session_state.config
+
         if not search_term:
             # Return first N invoices when no search term
-            results = search_invoices(
-                st.session_state.app_config,
-                search_term="",
-                limit=limit,
-            )
-            # For empty search, just get all (the query handles it)
-            if hasattr(backend, '_invoices'):
+            if hasattr(backend, "_invoices"):
                 # MockBackend - get all invoices
                 results = backend._invoices.head(limit)
+            else:
+                results = search_invoices(config, search_term="", limit=limit)
         else:
-            results = search_invoices(
-                st.session_state.app_config,
-                search_term=search_term,
-                limit=limit,
-            )
+            results = search_invoices(config, search_term=search_term, limit=limit)
 
         # Apply category filter if specified
         if category_filter and not results.empty:
@@ -289,10 +268,8 @@ def handle_search(search_term: str, category_filter: str = None, limit: int = 50
 def handle_load_flagged():
     """Handle loading flagged invoices."""
     try:
-        results = get_flagged_invoices(
-            st.session_state.app_config,
-            limit=st.session_state.app_config.page_size,
-        )
+        config = st.session_state.config
+        results = get_flagged_invoices(config, limit=config.app.page_size)
 
         st.session_state.flagged_results = results
 
@@ -310,18 +287,14 @@ def add_to_review_queue(invoice_ids: set):
     if not invoice_ids:
         return
 
-    # Combine IDs from both search and flagged results
     st.session_state.selected_for_review.update(invoice_ids)
 
-    # Fetch full invoice details
     try:
         review_df = get_invoices_by_ids(
-            st.session_state.app_config,
+            st.session_state.config,
             list(st.session_state.selected_for_review),
         )
         st.session_state.review_invoices = review_df
-
-        # Update total count when adding new invoices
         st.session_state.total_invoices_in_review = len(review_df)
 
     except Exception as e:
@@ -331,19 +304,19 @@ def add_to_review_queue(invoice_ids: set):
 def handle_submit_corrections(corrections: List[Dict]):
     """Handle submission of invoice corrections."""
     try:
-        if st.session_state.app_config.is_test_mode:
-            # In test mode, show success message but still process through backend
-            write_corrections_batch(st.session_state.app_config, corrections)
+        config = st.session_state.config
+
+        if config.app.is_test_mode:
+            write_corrections_batch(config, corrections)
             show_success_message(
                 f"[TEST MODE] Successfully submitted {len(corrections)} correction(s)!"
             )
         else:
-            write_corrections_batch(st.session_state.app_config, corrections)
+            write_corrections_batch(config, corrections)
             show_success_message(
                 f"Successfully submitted {len(corrections)} correction(s)!"
             )
 
-        # Increment completed count
         st.session_state.completed_invoices += len(corrections)
 
         # Remove submitted invoices from review queue
@@ -355,12 +328,11 @@ def handle_submit_corrections(corrections: List[Dict]):
         # Update review_invoices DataFrame
         if st.session_state.selected_for_review:
             review_df = get_invoices_by_ids(
-                st.session_state.app_config,
+                config,
                 list(st.session_state.selected_for_review),
             )
             st.session_state.review_invoices = review_df
         else:
-            # All invoices processed, clear everything
             st.session_state.review_invoices = pd.DataFrame()
             st.session_state.current_invoice_idx = 0
 
@@ -378,17 +350,16 @@ def handle_clear_review():
 
 def render_sidebar():
     """Render the sidebar with configuration and stats."""
+    config = st.session_state.config
+
     with st.sidebar:
-        # Databricks logo at the top
         st.image("assets/databricks_logo.svg", width=200)
-
         st.title("Spend Categorization")
-
         st.divider()
 
         # Mode indicator
-        mode = st.session_state.app_config.mode.upper()
-        if st.session_state.app_config.is_test_mode:
+        mode = config.app.mode.upper()
+        if config.app.is_test_mode:
             st.caption(f"🧪 Mode: **{mode}** (Mock Data)")
         else:
             st.caption(f"🏭 Mode: **{mode}** (Lakebase)")
@@ -412,7 +383,6 @@ def render_sidebar():
             st.write(f"**Done:** {done}")
             st.write(f"**Remaining:** {remaining}")
 
-            # Progress bar showing done / total
             if total > 0:
                 progress = done / total
                 st.progress(progress)
@@ -420,7 +390,6 @@ def render_sidebar():
 
         st.divider()
 
-        # Refresh data
         if st.button("Refresh Categories", use_container_width=True):
             load_available_categories()
             st.rerun()
@@ -428,27 +397,27 @@ def render_sidebar():
 
 def main():
     """Main application logic."""
-    # Apply Databricks theme
     apply_databricks_theme()
-
     initialize_session_state()
 
     # Load configurations and initialize backend
-    if st.session_state.app_config is None:
+    if st.session_state.config is None:
         if not load_configurations():
             st.stop()
+
+    config = st.session_state.config
 
     # Load categories if not already loaded
     if not st.session_state.available_categories:
         load_available_categories()
 
-    # Render sidebar
     render_sidebar()
 
     # Main content area
-    if st.session_state.app_config.is_test_mode:
+    if config.app.is_test_mode:
         st.info(
-            "**Test Mode**: This is a demonstration using sample data. No actual database changes will be made."
+            "**Test Mode**: This is a demonstration using sample data. "
+            "No actual database changes will be made."
         )
 
     # Create tabs for different views
@@ -460,12 +429,10 @@ def main():
             on_search=handle_search,
             available_categories=st.session_state.available_categories,
         )
-
         st.divider()
 
         if not st.session_state.search_results.empty:
             st.subheader("Search Results")
-
             selected_ids = render_invoice_table(
                 st.session_state.search_results,
                 key_prefix="search",
@@ -483,12 +450,10 @@ def main():
     # Tab 2: Flagged Invoices
     with tab2:
         render_flagged_pane(on_load_flagged=handle_load_flagged)
-
         st.divider()
 
         if not st.session_state.flagged_results.empty:
             st.subheader("Flagged Invoices")
-
             selected_ids = render_invoice_table(
                 st.session_state.flagged_results,
                 key_prefix="flagged",
