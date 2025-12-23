@@ -226,11 +226,23 @@ class LakebaseBackend(DatabaseBackend):
                 instance_names=[self.instance],
             )
 
+            # Get current user email
+            user = self.client.current_user.me()
+            # Try to get email from user object
+            if hasattr(user, "emails") and user.emails:
+                user_email = user.emails[0].value
+            elif hasattr(user, "user_name") and user.user_name:
+                user_email = user.user_name
+            else:
+                raise ValueError(
+                    "Could not determine user email from Databricks user object"
+                )
+
             # Create psycopg2 connection
             conn = psycopg2.connect(
                 host=db_instance.read_write_dns,
                 dbname=self.dbname,
-                user=cred.token.split("@")[0] if "@" in cred.token else "databricks",
+                user=user_email,
                 password=cred.token,
                 sslmode="require",
             )
