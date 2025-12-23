@@ -1,4 +1,4 @@
-"""Test fixtures and utilities."""
+"""Test fixtures."""
 
 import pytest
 import pandas as pd
@@ -11,9 +11,9 @@ def sample_config():
     return AppConfig(
         mode="test",
         page_size=50,
-        invoices_table="test_invoices",
-        corrections_table="test_corrections",
-        flagged_view="test_flagged",
+        invoices_sync="test_invoices_sync",
+        categorization_sync="test_categorization_sync",
+        reviews_table="test_reviews",
     )
 
 
@@ -36,21 +36,21 @@ def sample_invoice_data():
 
 
 @pytest.fixture
-def sample_corrections():
-    """Provide sample correction data for testing."""
+def sample_reviews():
+    """Provide sample review data for testing."""
     return [
         {
             "invoice_id": "INV001",
-            "transaction_ids": ["TXN001"],
-            "corrected_category": "Stationery",
-            "comment": "More specific category",
-            "corrected_by": "test_user",
+            "category": "Stationery",
+            "schema_id": "v1",
+            "prompt_id": "p1",
+            "labeler_id": "test_user",
         },
         {
             "invoice_id": "INV002",
-            "transaction_ids": ["TXN002"],
-            "corrected_category": "IT Services",
-            "comment": "Reclassified",
-            "corrected_by": "test_user",
+            "category": "IT Services",
+            "schema_id": "v1",
+            "prompt_id": "p1",
+            "labeler_id": "test_user",
         },
     ]

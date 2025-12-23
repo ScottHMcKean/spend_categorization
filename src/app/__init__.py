@@ -17,14 +17,13 @@ from .queries import (
     get_flagged_invoices,
     get_invoices_by_ids,
     get_available_categories,
-    get_invoice_by_transaction_id,
+    get_invoice_with_categorization,
 )
-from .corrections import (
-    write_correction,
-    write_corrections_batch,
-    get_correction_history,
-    initialize_corrections_table,
-    initialize_invoices_table,
+from .reviews import (
+    write_review,
+    write_reviews_batch,
+    get_review_history,
+    initialize_reviews_table,
 )
 
 __all__ = [
@@ -45,12 +44,10 @@ __all__ = [
     "get_flagged_invoices",
     "get_invoices_by_ids",
     "get_available_categories",
-    "get_invoice_by_transaction_id",
-    # Correction functions
-    "write_correction",
-    "write_corrections_batch",
-    "get_correction_history",
-    "initialize_corrections_table",
-    "initialize_invoices_table",
+    "get_invoice_with_categorization",
+    # Review functions
+    "write_review",
+    "write_reviews_batch",
+    "get_review_history",
+    "initialize_reviews_table",
 ]
-

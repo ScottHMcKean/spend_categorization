@@ -1,297 +1,308 @@
-company:
-  name: Borealis Wind Systems
-  industry: Wind turbine manufacturing
-  cost_centres:
-    - CC-100-Production
-    - CC-200-Maintenance
-    - CC-300-Engineering
-    - CC-400-IT
-    - CC-500-Sales
-    - CC-600-HR
-    - CC-700-Logistics
-    - CC-800-Admin
-    - CC-900-Projects
-  plants:
-    - name: US-East Plant
-      id: PLANT-US-E
-      region: North America
-      country: USA
-    - name: US-West Plant
-      id: PLANT-US-W
-      region: North America
-      country: USA
-    - name: Germany-North
-      id: PLANT-DE-N
-      region: Europe
-      country: Germany
-    - name: Germany-South
-      id: PLANT-DE-S
-      region: Europe
-      country: Germany
-    - name: Vietnam Plant
-      id: PLANT-VN
-      region: Asia
-      country: Vietnam
-    - name: Brazil Plant
-      id: PLANT-BR
-      region: South America
-      country: Brazil
-  categories:
-    Direct:
-      Raw Materials:
-        - Structural steel plate
-        - Aluminum ingot
-        - Epoxy resin
-        - Copper wire
-      Components:
-        - Gearmotor
-        - Control PCB
-        - Relay module
-        - Industrial fan
-      Sub-Assemblies:
-        - Blade assembly
-        - Nacelle subsystem
-        - Yaw module
-      Packaging Materials:
-        - Wooden pallet
-        - Stretch film
-        - Export crate
-      Blades & Hub Parts:
-        - Blade shear web
-        - Pitch bearing
-        - Hub flange
-      Electrical Assemblies:
-        - Control cabinet
-        - Main breaker
-        - Grounding busbar
-      Hydraulic Systems:
-        - Hydraulic pump
-        - Hydraulic cylinder
-        - Hydraulic filter
-      Bearings & Seals:
-        - Spherical roller bearing
-        - Deep groove ball bearing
-        - Oil seal
-      Fasteners:
-        - High-tensile bolt
-        - Locknut
-        - Threaded rod
-      Castings & Forgings:
-        - Gear blank
-        - Housing casting
-        - Tower flange
-    Indirect:
-      MRO (Maintenance, Repair, Operations):
-        - Tool rental
-        - Cleaning solvent
-        - Vacuum pump
-        - Air filter
-      IT & Software:
-        - CAD license
-        - Cloud storage
-        - Engineering workstation
-        - Firewall subscription
-      Facilities & Utilities:
-        - Electricity
-        - Water & sewage
-        - Building repair
-        - Facility landscaping
-      Logistics & Freight:
-        - Air freight
-        - Ocean freight
-        - Local courier
-        - Container rental
-      Professional Services:
-        - Legal advice
-        - Audit fee
-        - Engineering consulting
-        - Management consulting
-        - IT consulting
-      Office Supplies:
-        - Printer paper
-        - Desk chair
-        - Toner cartridge
-        - Notebook
-      Training & HR:
-        - Forklift certification course
-        - Safety workshop
-        - Leadership training
-      Travel & Entertainment:
-        - Airfare
-        - Hotel
-        - Taxi/ride share
-        - Group meal
-      Temporary Labor / Contracting:
-        - Site labor hire
-        - Crane rental crew
-        - Temporary electrician
-      Safety & PPE:
-        - Hardhat
-        - Hearing protection
-        - Nitrile gloves
-        - High-vis jacket
-      Marketing & Advertising:
-        - Trade show booth
-        - Digital ad spend
-        - Promotional items
-      Telecom & Connectivity:
-        - Mobile phone plan
-        - Internet service
-        - VOIP subscription
-      Subscriptions & Data Services:
-        - Market data feed
-        - Industry standards subscription
-      Cleaning & Janitorial:
-        - Janitorial service
-        - Cleaning chemicals
-        - Waste bin liners
-      Security Services:
-        - On-site guard service
-        - Alarm monitoring
-      Rent & Leases:
-        - Warehouse lease
-        - Office rent
-      Recruitment Services:
-        - Agency placement fee
-        - Background check
-      Events & Conferences:
-        - Conference registration
-        - Sponsorship fee
-        - Event catering
-    Non-Procureable:
-      Payroll:
-        - Production wages
-        - Management salaries
-        - Shift premiums
-      Government Services & Taxes:
-        - Income tax
-        - Property tax
-        - Regulatory fee
-      Finance Charges:
-        - Loan interest
-        - Bank fees
-        - Late payment penalty
-      Miscellaneous Expenses:
-        - Small write-off
-        - Rounding adjustment
+# Spend Categorization Configuration
+# Three modules: generate, categorize, app
 
-  category_cost_centre_mapping:
-    # Direct categories
-    Raw Materials: CC-100-Production
-    Components: CC-100-Production
-    Sub-Assemblies: CC-100-Production
-    Packaging Materials: CC-700-Logistics
-    Blades & Hub Parts: CC-300-Engineering
-    Electrical Assemblies: CC-100-Production
-    Hydraulic Systems: CC-100-Production
-    Bearings & Seals: CC-100-Production
-    Fasteners: CC-100-Production
-    Castings & Forgings: CC-100-Production
-    # Indirect categories
-    MRO (Maintenance, Repair, Operations): CC-200-Maintenance
-    IT & Software: CC-400-IT
-    Facilities & Utilities: CC-200-Maintenance
-    Logistics & Freight: CC-700-Logistics
-    Professional Services: CC-900-Projects
-    Office Supplies: CC-800-Admin
-    Training & HR: CC-600-HR
-    Travel & Entertainment: CC-800-Admin
-    Temporary Labor / Contracting: CC-200-Maintenance
-    Safety & PPE: CC-200-Maintenance
-    Marketing & Advertising: CC-500-Sales
-    Telecom & Connectivity: CC-400-IT
-    Subscriptions & Data Services: CC-400-IT
-    Cleaning & Janitorial: CC-800-Admin
-    Security Services: CC-800-Admin
-    Rent & Leases: CC-800-Admin
-    Recruitment Services: CC-600-HR
-    Events & Conferences: CC-500-Sales
-    # Non-Procureable categories
-    Payroll: CC-600-HR
-    Government Services & Taxes: CC-800-Admin
-    Finance Charges: CC-800-Admin
-    Miscellaneous Expenses: CC-800-Admin
+# =============================================================================
+# GENERATE - Data generation (0_generate.ipynb)
+# Creates: invoices_raw -> invoices (with LLM descriptions)
+# =============================================================================
+generate:
+  company:
+    name: Borealis Wind Systems
+    industry: Wind turbine manufacturing
+    cost_centres:
+      - CC-100-Production
+      - CC-200-Maintenance
+      - CC-300-Engineering
+      - CC-400-IT
+      - CC-500-Sales
+      - CC-600-HR
+      - CC-700-Logistics
+      - CC-800-Admin
+      - CC-900-Projects
+    plants:
+      - name: US-East Plant
+        id: PLANT-US-E
+        region: North America
+        country: USA
+      - name: US-West Plant
+        id: PLANT-US-W
+        region: North America
+        country: USA
+      - name: Germany-North
+        id: PLANT-DE-N
+        region: Europe
+        country: Germany
+      - name: Germany-South
+        id: PLANT-DE-S
+        region: Europe
+        country: Germany
+      - name: Vietnam Plant
+        id: PLANT-VN
+        region: Asia
+        country: Vietnam
+      - name: Brazil Plant
+        id: PLANT-BR
+        region: South America
+        country: Brazil
+    categories:
+      Direct:
+        Raw Materials:
+          - Structural steel plate
+          - Aluminum ingot
+          - Epoxy resin
+          - Copper wire
+        Components:
+          - Gearmotor
+          - Control PCB
+          - Relay module
+          - Industrial fan
+        Sub-Assemblies:
+          - Blade assembly
+          - Nacelle subsystem
+          - Yaw module
+        Packaging Materials:
+          - Wooden pallet
+          - Stretch film
+          - Export crate
+        Blades & Hub Parts:
+          - Blade shear web
+          - Pitch bearing
+          - Hub flange
+        Electrical Assemblies:
+          - Control cabinet
+          - Main breaker
+          - Grounding busbar
+        Hydraulic Systems:
+          - Hydraulic pump
+          - Hydraulic cylinder
+          - Hydraulic filter
+        Bearings & Seals:
+          - Spherical roller bearing
+          - Deep groove ball bearing
+          - Oil seal
+        Fasteners:
+          - High-tensile bolt
+          - Locknut
+          - Threaded rod
+        Castings & Forgings:
+          - Gear blank
+          - Housing casting
+          - Tower flange
+      Indirect:
+        MRO (Maintenance, Repair, Operations):
+          - Tool rental
+          - Cleaning solvent
+          - Vacuum pump
+          - Air filter
+        IT & Software:
+          - CAD license
+          - Cloud storage
+          - Engineering workstation
+          - Firewall subscription
+        Facilities & Utilities:
+          - Electricity
+          - Water & sewage
+          - Building repair
+          - Facility landscaping
+        Logistics & Freight:
+          - Air freight
+          - Ocean freight
+          - Local courier
+          - Container rental
+        Professional Services:
+          - Legal advice
+          - Audit fee
+          - Engineering consulting
+          - Management consulting
+          - IT consulting
+        Office Supplies:
+          - Printer paper
+          - Desk chair
+          - Toner cartridge
+          - Notebook
+        Training & HR:
+          - Forklift certification course
+          - Safety workshop
+          - Leadership training
+        Travel & Entertainment:
+          - Airfare
+          - Hotel
+          - Taxi/ride share
+          - Group meal
+        Temporary Labor / Contracting:
+          - Site labor hire
+          - Crane rental crew
+          - Temporary electrician
+        Safety & PPE:
+          - Hardhat
+          - Hearing protection
+          - Nitrile gloves
+          - High-vis jacket
+        Marketing & Advertising:
+          - Trade show booth
+          - Digital ad spend
+          - Promotional items
+        Telecom & Connectivity:
+          - Mobile phone plan
+          - Internet service
+          - VOIP subscription
+        Subscriptions & Data Services:
+          - Market data feed
+          - Industry standards subscription
+        Cleaning & Janitorial:
+          - Janitorial service
+          - Cleaning chemicals
+          - Waste bin liners
+        Security Services:
+          - On-site guard service
+          - Alarm monitoring
+        Rent & Leases:
+          - Warehouse lease
+          - Office rent
+        Recruitment Services:
+          - Agency placement fee
+          - Background check
+        Events & Conferences:
+          - Conference registration
+          - Sponsorship fee
+          - Event catering
+      Non-Procureable:
+        Payroll:
+          - Production wages
+          - Management salaries
+          - Shift premiums
+        Government Services & Taxes:
+          - Income tax
+          - Property tax
+          - Regulatory fee
+        Finance Charges:
+          - Loan interest
+          - Bank fees
+          - Late payment penalty
+        Miscellaneous Expenses:
+          - Small write-off
+          - Rounding adjustment
+    category_cost_centre_mapping:
+      Raw Materials: CC-100-Production
+      Components: CC-100-Production
+      Sub-Assemblies: CC-100-Production
+      Packaging Materials: CC-700-Logistics
+      Blades & Hub Parts: CC-300-Engineering
+      Electrical Assemblies: CC-100-Production
+      Hydraulic Systems: CC-100-Production
+      Bearings & Seals: CC-100-Production
+      Fasteners: CC-100-Production
+      Castings & Forgings: CC-100-Production
+      MRO (Maintenance, Repair, Operations): CC-200-Maintenance
+      IT & Software: CC-400-IT
+      Facilities & Utilities: CC-200-Maintenance
+      Logistics & Freight: CC-700-Logistics
+      Professional Services: CC-900-Projects
+      Office Supplies: CC-800-Admin
+      Training & HR: CC-600-HR
+      Travel & Entertainment: CC-800-Admin
+      Temporary Labor / Contracting: CC-200-Maintenance
+      Safety & PPE: CC-200-Maintenance
+      Marketing & Advertising: CC-500-Sales
+      Telecom & Connectivity: CC-400-IT
+      Subscriptions & Data Services: CC-400-IT
+      Cleaning & Janitorial: CC-800-Admin
+      Security Services: CC-800-Admin
+      Rent & Leases: CC-800-Admin
+      Recruitment Services: CC-600-HR
+      Events & Conferences: CC-500-Sales
+      Payroll: CC-600-HR
+      Government Services & Taxes: CC-800-Admin
+      Finance Charges: CC-800-Admin
+      Miscellaneous Expenses: CC-800-Admin
 
-# Application configuration
-app:
-  # Mode: "test" (no backend, uses mock data) or "prod" (uses Lakebase PostgreSQL)
-  mode: prod
-  page_size: 50
-  default_user: user
-  lakebase_instance: "shm"
-  lakebase_dbname: "databricks_postgres"
+  # Delta tables created by 0_generate.ipynb
+  tables:
+    invoices_raw: invoices_raw # Python-generated base data
+    invoices: invoices # LLM-enhanced with descriptions
+    categories: categories # Category hierarchy from config
 
-# Legacy Databricks SQL Warehouse configuration (for data preparation notebooks)
-sql:
-  server_hostname: "your-workspace.cloud.databricks.com"
-  http_path: "/sql/1.0/warehouses/your-warehouse-id"
-  access_token: "your-access-token"
-  catalog: "shm"
-  schema: "spend"
+  data:
+    catalog: shm
+    schema: spend
+    llm_endpoint: databricks-claude-3-7-sonnet
+    rows: 10000
+    start: 2024-01-01
+    end: 2025-12-31
+    distribution:
+      Direct: 0.6
+      Indirect: 0.35
+      Non-Procureable: 0.05
+    python_columns:
+      - date
+      - order_id
+      - category_level_1
+      - category_level_2
+      - category_level_3
+      - cost_centre
+      - plant
+      - plant_id
+      - region
+      - amount
+      - unit_price
+      - total
+    llm_columns:
+      - supplier
+      - supplier_country
+      - description
+    prompt: |
+      Generate these fields based on the provided information:
+      - description (max 15 words, realistic for category)
+      - supplier (real company name, match category type and region)
+      - supplier_country (ISO country code)
 
-# Table configuration
-tables:
-  invoices: "invoices"
-  corrections: "invoice_corrections"
-  flagged_view: null # Optional: custom view for flagged invoices
+      Return a JSON object with supplier, supplier_country, and description.
 
-# UI configuration
-ui:
-  title: "Spend Categorization"
-  icon: "databricks"
+      Invoice Information:
 
-# Search configuration
-search:
-  default_fields:
-    - "invoice_number"
-    - "vendor_name"
-    - "description"
-  max_results: 500
-
-# Flagging configuration
-flagging:
-  low_confidence_threshold: 0.7
-  critical_confidence_threshold: 0.5
-
-# Data generation configuration (for notebooks)
-data_generation:
+# =============================================================================
+# CATEGORIZE - Classification pipeline (notebooks 3-6)
+# Creates: prompts, cat_bootstrap, cat_catboost, cat_vectorsearch
+# =============================================================================
+categorize:
   catalog: shm
   schema: spend
-  llm_endpoint: databricks-gpt-oss-20b
-  table: transactions
-  rows: 10000
-  start: 2024-01-01
-  end: 2025-12-31
-  distribution:
-    Direct: 0.6
-    Indirect: 0.35
-    Non-Procureable: 0.05
-  python_columns:
-    - date
-    - order_id
-    - category_level_1
-    - category_level_2
-    - category_level_3
-    - cost_centre
-    - plant
-    - plant_id
-    - region
-    - amount
-    - unit_price
-    - total
-  llm_columns:
-    - supplier
-    - supplier_country
-    - description
-    - reviewer_comments
-  prompt: |
-    Generate these fields based on the provided information:
-    {
-      "supplier": "string (real company name, match category type and region)",
-      "supplier_country": "string (ISO country code)",
-      "description": "string (max 15 words, realistic for category)",
-    }
 
-    Return a JSON object with supplier, supplier_country, description, ammount, unit_price, unit, and total.
+  # Delta tables for categorization
+  tables:
+    prompts: prompts # Prompt versions used for classification
+    cat_bootstrap: cat_bootstrap # LLM bootstrap classifications
+    cat_catboost: cat_catboost # CatBoost model predictions
+    cat_vectorsearch: cat_vectorsearch # Vector search predictions
 
-    Invoice Information:
+# =============================================================================
+# APP - Streamlit application
+# Reads from Lakebase (synced from Delta), writes reviews
+# =============================================================================
+app:
+  mode: test # test (mock data) or prod (Lakebase)
+  page_size: 50
+  default_user: user
+  lakebase_instance: shm
+  lakebase_dbname: databricks_postgres
+
+  # Lakebase tables
+  tables:
+    invoices_sync: invoices_sync # synced from invoices
+    categorization_sync: categorization_sync # synced from cat_bootstrap
+    reviews: reviews # app writes, ingested to Delta
+
+  ui:
+    title: Spend Categorization
+    icon: databricks
+
+  search:
+    default_fields:
+      - invoice_number
+      - vendor_name
+      - description
+    max_results: 500
+
+  flagging:
+    low_confidence_threshold: 0.7
+    critical_confidence_threshold: 0.5

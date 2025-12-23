@@ -1,8 +1,7 @@
 """Common utilities for Spend Categorization.
 
-Includes:
-- Spark session management (works on Databricks and locally via Databricks Connect)
-- CategorizeConfig for notebooks 1-6
+- Spark session management (Databricks and Databricks Connect)
+- CategorizeConfig for notebooks 3-6
 - Sample data generation for testing
 """
 
@@ -19,128 +18,104 @@ from pyspark.sql import SparkSession
 
 
 def is_running_on_databricks() -> bool:
-    """Check if code is running on Databricks (vs locally with Connect).
-
-    Uses multiple detection methods:
-    1. Check for DATABRICKS_RUNTIME_VERSION environment variable
-    2. Check for /databricks path existence
-    3. Try to import dbutils
-    """
-    # Method 1: Environment variable (most reliable)
+    """Check if running on Databricks vs locally with Connect."""
     if os.environ.get("DATABRICKS_RUNTIME_VERSION"):
         return True
-
-    # Method 2: Check for Databricks filesystem
     if os.path.exists("/databricks"):
         return True
-
-    # Method 3: Try dbutils import
     try:
         from pyspark.dbutils import DBUtils  # noqa: F401
 
         return True
     except ImportError:
         pass
-
     return False
 
 
 def get_spark() -> SparkSession:
-    """
-    Get or create a Spark session.
-
-    Works in both environments:
-    - On Databricks: Returns the existing Spark session
-    - Locally: Creates a session via Databricks Connect (requires configuration)
-
-    For local development, configure Databricks Connect by running:
-        databricks configure
-
-    Or set environment variables:
-        DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_CLUSTER_ID
-
-    Returns:
-        SparkSession: Active Spark session
-    """
-    # Try to get existing session first (works on Databricks)
+    """Get or create a Spark session."""
     existing = SparkSession.getActiveSession()
     if existing is not None:
         return existing
 
-    # No active session - create via Databricks Connect
     from databricks.connect import DatabricksSession
 
     return DatabricksSession.builder.serverless().getOrCreate()
 
 
-# =============================================================================
-# CategorizeConfig for Notebooks 1-6
-# =============================================================================
-
-
 class CategorizeConfig(BaseModel):
-    """Single configuration model for notebooks 1-6 (categorization pipeline).
+    """Configuration for categorization notebooks (3-6).
 
-    Flattens sql and data_generation settings into one model.
+    Tables created:
+    - prompts: Prompt versions for classification
+    - cat_bootstrap: LLM bootstrap classifications
+    - cat_catboost: CatBoost predictions
+    - cat_vectorsearch: Vector search predictions
     """
 
     model_config = ConfigDict(extra="ignore")
 
-    # Unity Catalog location
     catalog: str = "main"
     schema_name: str = "default"
 
-    # SQL warehouse settings (optional, for direct SQL access)
-    server_hostname: str = ""
-    http_path: str = ""
-    access_token: str = ""
+    # Table names
+    prompts_table: str = "prompts"
+    cat_bootstrap_table: str = "cat_bootstrap"
+    cat_catboost_table: str = "cat_catboost"
+    cat_vectorsearch_table: str = "cat_vectorsearch"
+
+    @property
+    def full_prompts(self) -> str:
+        return f"{self.catalog}.{self.schema_name}.{self.prompts_table}"
+
+    @property
+    def full_cat_bootstrap(self) -> str:
+        return f"{self.catalog}.{self.schema_name}.{self.cat_bootstrap_table}"
+
+    @property
+    def full_cat_catboost(self) -> str:
+        return f"{self.catalog}.{self.schema_name}.{self.cat_catboost_table}"
+
+    @property
+    def full_cat_vectorsearch(self) -> str:
+        return f"{self.catalog}.{self.schema_name}.{self.cat_vectorsearch_table}"
 
     @classmethod
     def from_yaml(cls, config_path: Optional[str] = None) -> "CategorizeConfig":
-        """Load categorize configuration from YAML file."""
         if config_path is None:
             config_path = Path(__file__).parent.parent / "config.yaml"
         else:
             config_path = Path(config_path)
 
         if not config_path.exists():
-            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+            raise FileNotFoundError(f"Config not found: {config_path}")
 
         with open(config_path, "r") as f:
             data = yaml.safe_load(f)
 
-        flat_data = {}
+        cat = data.get("categorize", {})
+        tables = cat.get("tables", {})
 
-        # Prefer data_generation for catalog/schema (primary source)
-        if "data_generation" in data:
-            dg = data["data_generation"]
-            flat_data["catalog"] = dg.get("catalog", "main")
-            flat_data["schema_name"] = dg.get("schema", "default")
-
-        # SQL settings (optional override or additional config)
-        if "sql" in data:
-            sql = data["sql"]
-            # Only override catalog/schema if not already set from data_generation
-            if "catalog" not in flat_data:
-                flat_data["catalog"] = sql.get("catalog", "main")
-            if "schema_name" not in flat_data:
-                flat_data["schema_name"] = sql.get("schema", "default")
-            flat_data["server_hostname"] = sql.get("server_hostname", "")
-            flat_data["http_path"] = sql.get("http_path", "")
-            flat_data["access_token"] = sql.get("access_token", "")
-
-        return cls.model_validate(flat_data)
+        return cls.model_validate(
+            {
+                "catalog": cat.get("catalog", "main"),
+                "schema_name": cat.get("schema", "default"),
+                "prompts_table": tables.get("prompts", "prompts"),
+                "cat_bootstrap_table": tables.get("cat_bootstrap", "cat_bootstrap"),
+                "cat_catboost_table": tables.get("cat_catboost", "cat_catboost"),
+                "cat_vectorsearch_table": tables.get(
+                    "cat_vectorsearch", "cat_vectorsearch"
+                ),
+            }
+        )
 
 
 def load_categorize_config(config_path: Optional[str] = None) -> CategorizeConfig:
-    """Load configuration for categorization notebooks (1-6)."""
+    """Load configuration for categorization notebooks."""
     return CategorizeConfig.from_yaml(config_path)
 
 
-# =============================================================================
-# Sample Data Generation
-# =============================================================================
-
+# Sample data for testing
 SAMPLE_VENDORS = [
     "Acme Office Supplies",
     "TechCorp Software",
@@ -203,18 +178,7 @@ def generate_sample_invoices(
     low_confidence_ratio: float = 0.3,
     null_category_ratio: float = 0.1,
 ) -> pd.DataFrame:
-    """
-    Generate sample invoice data for testing.
-
-    Args:
-        count: Number of invoices to generate
-        seed: Random seed for reproducibility (None for random)
-        low_confidence_ratio: Fraction of invoices with low confidence (0.3-0.69)
-        null_category_ratio: Fraction of invoices with null category
-
-    Returns:
-        DataFrame with sample invoice data
-    """
+    """Generate sample invoice data for testing."""
     if seed is not None:
         random.seed(seed)
 
@@ -228,13 +192,11 @@ def generate_sample_invoices(
         description = random.choice(SAMPLE_DESCRIPTIONS)
         amount = round(random.uniform(50, 5000), 2)
 
-        # Simulate low confidence for some invoices
         if random.random() < low_confidence_ratio:
             confidence = round(random.uniform(0.3, 0.69), 4)
         else:
             confidence = round(random.uniform(0.7, 0.99), 4)
 
-        # Some invoices have null category
         if random.random() < null_category_ratio:
             category = None
             confidence = 0.0
