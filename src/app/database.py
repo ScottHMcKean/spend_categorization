@@ -50,7 +50,7 @@ class MockBackend(DatabaseBackend):
     def __init__(self):
         """Initialize mock backend with sample data."""
         # Import here to avoid circular imports
-        from utils import generate_sample_invoices, get_sample_categories
+        from src.utils import generate_sample_invoices, get_sample_categories
 
         self._invoices = generate_sample_invoices(100)
         self._corrections = pd.DataFrame(
@@ -325,22 +325,22 @@ def create_backend(config: Config) -> DatabaseBackend:
     """
     from .config import Config
 
-    if config.app.is_test_mode:
+    if config.is_test_mode:
         logger.info("Creating MockBackend for test mode")
         return MockBackend()
 
-    if config.app.is_prod_mode:
-        if not config.app.lakebase_instance:
-            raise ValueError("app.lakebase_instance is required for prod mode")
+    if config.is_prod_mode:
+        if not config.lakebase_instance:
+            raise ValueError("lakebase_instance is required for prod mode")
         logger.info(
-            f"Creating LakebaseBackend for prod mode (instance: {config.app.lakebase_instance})"
+            f"Creating LakebaseBackend for prod mode (instance: {config.lakebase_instance})"
         )
         return LakebaseBackend(
-            instance=config.app.lakebase_instance,
-            dbname=config.app.lakebase_dbname,
+            instance=config.lakebase_instance,
+            dbname=config.lakebase_dbname,
         )
 
-    raise ValueError(f"Unknown mode: {config.app.mode}")
+    raise ValueError(f"Unknown mode: {config.mode}")
 
 
 # Global backend instance (lazy initialized)
@@ -376,3 +376,4 @@ def reset_backend() -> None:
     """Reset the global backend (useful for testing)."""
     global _backend
     _backend = None
+

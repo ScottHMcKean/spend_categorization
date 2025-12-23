@@ -13,16 +13,16 @@ import streamlit as st
 import pandas as pd
 from typing import List, Dict
 
-from invoice_app.config import load_config, Config
-from invoice_app.database import init_backend, get_backend
-from invoice_app import (
+from src.app.config import load_config, Config
+from src.app.database import init_backend, get_backend
+from src.app import (
     search_invoices,
     get_flagged_invoices,
     get_invoices_by_ids,
     get_available_categories,
     write_corrections_batch,
 )
-from invoice_app.ui_components import (
+from src.app.ui_components import (
     render_invoice_table,
     render_search_pane,
     render_flagged_pane,
@@ -42,7 +42,7 @@ except Exception as e:
 
 # Page configuration
 st.set_page_config(
-    page_title=_config.ui.title,
+    page_title=_config.ui_title,
     page_icon="🧱",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -269,7 +269,7 @@ def handle_load_flagged():
     """Handle loading flagged invoices."""
     try:
         config = st.session_state.config
-        results = get_flagged_invoices(config, limit=config.app.page_size)
+        results = get_flagged_invoices(config, limit=config.page_size)
 
         st.session_state.flagged_results = results
 
@@ -306,7 +306,7 @@ def handle_submit_corrections(corrections: List[Dict]):
     try:
         config = st.session_state.config
 
-        if config.app.is_test_mode:
+        if config.is_test_mode:
             write_corrections_batch(config, corrections)
             show_success_message(
                 f"[TEST MODE] Successfully submitted {len(corrections)} correction(s)!"
@@ -358,8 +358,8 @@ def render_sidebar():
         st.divider()
 
         # Mode indicator
-        mode = config.app.mode.upper()
-        if config.app.is_test_mode:
+        mode = config.mode.upper()
+        if config.is_test_mode:
             st.caption(f"🧪 Mode: **{mode}** (Mock Data)")
         else:
             st.caption(f"🏭 Mode: **{mode}** (Lakebase)")
@@ -414,7 +414,7 @@ def main():
     render_sidebar()
 
     # Main content area
-    if config.app.is_test_mode:
+    if config.is_test_mode:
         st.info(
             "**Test Mode**: This is a demonstration using sample data. "
             "No actual database changes will be made."

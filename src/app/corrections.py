@@ -47,7 +47,7 @@ def write_correction(
     for transaction_id in transaction_ids:
         # Close out the current record (set end_date)
         close_query = f"""
-            UPDATE {schema_prefix}{config.tables.corrections}
+            UPDATE {schema_prefix}{config.corrections_table}
             SET end_date = :end_date,
                 is_current = FALSE
             WHERE transaction_id = :transaction_id
@@ -61,7 +61,7 @@ def write_correction(
         
         # Insert new record with corrected category
         insert_query = f"""
-            INSERT INTO {schema_prefix}{config.tables.corrections}
+            INSERT INTO {schema_prefix}{config.corrections_table}
             (transaction_id, invoice_id, category, start_date, end_date, 
              is_current, comment, corrected_by, correction_timestamp)
             VALUES (:transaction_id, :invoice_id, :category, :start_date, NULL,
@@ -137,7 +137,7 @@ def get_correction_history(
     schema_prefix = _get_schema_prefix(config)
     query = f"""
         SELECT *
-        FROM {schema_prefix}{config.tables.corrections}
+        FROM {schema_prefix}{config.corrections_table}
         WHERE transaction_id = :transaction_id
         ORDER BY start_date DESC
     """
@@ -162,7 +162,7 @@ def initialize_corrections_table(
         backend = get_backend()
     
     schema_prefix = _get_schema_prefix(config)
-    table = config.tables.corrections
+    table = config.corrections_table
     
     # PostgreSQL-compatible table creation
     create_query = f"""
@@ -214,7 +214,7 @@ def initialize_invoices_table(
         backend = get_backend()
     
     schema_prefix = _get_schema_prefix(config)
-    table = config.tables.invoices
+    table = config.invoices_table
     
     create_query = f"""
         CREATE TABLE IF NOT EXISTS {schema_prefix}{table} (
@@ -251,6 +251,7 @@ def initialize_invoices_table(
 
 def _get_schema_prefix(config: Config) -> str:
     """Get the schema prefix for table references."""
-    if config.app.is_test_mode:
+    if config.is_test_mode:
         return ""
     return ""
+

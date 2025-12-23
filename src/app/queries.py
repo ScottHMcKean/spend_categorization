@@ -34,7 +34,7 @@ def search_invoices(
         backend = get_backend()
 
     if search_fields is None:
-        search_fields = config.search.default_fields
+        search_fields = config.search_fields
 
     # Build WHERE clause with ILIKE conditions for each field (PostgreSQL)
     where_conditions = " OR ".join(
@@ -44,7 +44,7 @@ def search_invoices(
     schema_prefix = _get_schema_prefix(config)
     query = f"""
         SELECT *
-        FROM {schema_prefix}{config.tables.invoices}
+        FROM {schema_prefix}{config.invoices_table}
         WHERE {where_conditions}
         ORDER BY invoice_date DESC
         LIMIT {limit}
@@ -76,19 +76,19 @@ def get_flagged_invoices(
     schema_prefix = _get_schema_prefix(config)
 
     # Use custom view if configured, otherwise use default logic
-    if config.tables.flagged_view:
+    if config.flagged_view:
         query = f"""
             SELECT *
-            FROM {schema_prefix}{config.tables.flagged_view}
+            FROM {schema_prefix}{config.flagged_view}
             ORDER BY flag_priority DESC, invoice_date DESC
             LIMIT {limit}
         """
     else:
         # Default: flag invoices with low confidence or missing categories
-        threshold = config.flagging.low_confidence_threshold
+        threshold = config.low_confidence_threshold
         query = f"""
             SELECT *
-            FROM {schema_prefix}{config.tables.invoices}
+            FROM {schema_prefix}{config.invoices_table}
             WHERE confidence_score < {threshold} OR category IS NULL
             ORDER BY confidence_score ASC, invoice_date DESC
             LIMIT {limit}
@@ -125,7 +125,7 @@ def get_invoices_by_ids(
     schema_prefix = _get_schema_prefix(config)
     query = f"""
         SELECT *
-        FROM {schema_prefix}{config.tables.invoices}
+        FROM {schema_prefix}{config.invoices_table}
         WHERE invoice_id IN ({placeholders})
     """
 
@@ -152,7 +152,7 @@ def get_available_categories(
     schema_prefix = _get_schema_prefix(config)
     query = f"""
         SELECT DISTINCT category
-        FROM {schema_prefix}{config.tables.invoices}
+        FROM {schema_prefix}{config.invoices_table}
         WHERE category IS NOT NULL
         ORDER BY category
     """
@@ -183,7 +183,7 @@ def get_invoice_by_transaction_id(
     schema_prefix = _get_schema_prefix(config)
     query = f"""
         SELECT *
-        FROM {schema_prefix}{config.tables.invoices}
+        FROM {schema_prefix}{config.invoices_table}
         WHERE transaction_id = :transaction_id
     """
 
@@ -198,7 +198,8 @@ def _get_schema_prefix(config: Config) -> str:
     In test mode, we don't need a prefix.
     """
     # In test mode, MockBackend handles everything internally
-    if config.app.is_test_mode:
+    if config.is_test_mode:
         return ""
     # In prod mode, return empty - table names are fully qualified in config
     return ""
+

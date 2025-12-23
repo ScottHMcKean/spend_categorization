@@ -3,21 +3,21 @@
 import pytest
 import pandas as pd
 
-from invoice_app.config import Config, AppConfig, TablesConfig
-from invoice_app.database import (
+from src.app.config import AppConfig
+from src.app.database import (
     MockBackend,
     create_backend,
     init_backend,
     get_backend,
     reset_backend,
 )
-from invoice_app.queries import (
+from src.app.queries import (
     search_invoices,
     get_flagged_invoices,
     get_invoices_by_ids,
     get_available_categories,
 )
-from invoice_app.corrections import (
+from src.app.corrections import (
     write_correction,
     write_corrections_batch,
 )
@@ -25,10 +25,11 @@ from invoice_app.corrections import (
 
 @pytest.fixture
 def test_config():
-    """Create a test Config in test mode."""
-    return Config(
-        app=AppConfig(mode="test"),
-        tables=TablesConfig(invoices="invoices", corrections="invoice_corrections"),
+    """Create a test AppConfig in test mode."""
+    return AppConfig(
+        mode="test",
+        invoices_table="invoices",
+        corrections_table="invoice_corrections",
     )
 
 
@@ -63,13 +64,13 @@ class TestCreateBackend:
     def test_create_mock_backend_for_test_mode(self):
         """Test that test mode creates MockBackend."""
         reset_backend()
-        config = Config(app=AppConfig(mode="test"))
+        config = AppConfig(mode="test")
         backend = create_backend(config)
         assert isinstance(backend, MockBackend)
 
     def test_prod_mode_requires_lakebase_instance(self):
         """Test that prod mode requires lakebase_instance."""
-        config = Config(app=AppConfig(mode="prod", lakebase_instance=""))
+        config = AppConfig(mode="prod", lakebase_instance="")
         with pytest.raises(ValueError, match="lakebase_instance is required"):
             create_backend(config)
 

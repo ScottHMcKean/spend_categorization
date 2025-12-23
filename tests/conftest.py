@@ -2,19 +2,18 @@
 
 import pytest
 import pandas as pd
-from invoice_app.config import Config, AppConfig, TablesConfig
+from src.app.config import AppConfig
 
 
 @pytest.fixture
 def sample_config():
-    """Provide a sample Config for testing."""
-    return Config(
-        app=AppConfig(mode="test", page_size=50),
-        tables=TablesConfig(
-            invoices="test_invoices",
-            corrections="test_corrections",
-            flagged_view="test_flagged",
-        ),
+    """Provide a sample AppConfig for testing."""
+    return AppConfig(
+        mode="test",
+        page_size=50,
+        invoices_table="test_invoices",
+        corrections_table="test_corrections",
+        flagged_view="test_flagged",
     )
 
 

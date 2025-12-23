@@ -125,6 +125,8 @@ Run `1_infrastructure.ipynb` to:
 uv run streamlit run app.py
 ```
 
+We keep app writes narrow: the app only writes corrections (app.reviews), Databricks handles promotion to gold and reverse ETL, avoiding complex business logic in the app tier.
+
 ---
 
 ## Architecture
@@ -154,6 +156,8 @@ spend_categorization/
 
 ---
 
+Delta = system of record, Lakebase = low‑latency OLTP surface for the app, wired via synced tables and a small review table.
+
 ## Category Hierarchy
 
 The sample data uses a 3-level spend taxonomy:
@@ -171,6 +175,7 @@ The sample data uses a 3-level spend taxonomy:
 **Non-Procureable** (4 L2 categories)
 - Payroll, Government Services & Taxes, Finance Charges, Miscellaneous
 
+We version everything that affects classification: prompts, category schemas, and label versions, and always carry schema_id and prompt_id through invoices, bootstrap, and gold tables.
 ---
 
 ## Development
@@ -192,3 +197,61 @@ uv run pytest tests/ -v
 ## License
 
 See LICENSE file for details.
+
+## Notes
+
+In my application, I take invoice data, a category spreadsheet, and a prompt. Update append only tables for the categories (saved as a string) and the prompt (saved as a string). Then bootstrap generate the classifications. I then want to take the bootstrap generated categories and review them using an app. The reviewer will look at the invoices, either by a) searching for them, or b) taking invoices flagged with low confidence during the LLM bootstrapping. They will then correct the invoices and save the reviewed invoices to a 'gold' dataset that corresponds with the categories and workflow they are using (these should correspond to a date more than a specific version). We can then used the reviewed invoices to a) evaluate the prompt and llm classification, b) optimize the bootstrap prompt, c) train a catboost model, and d) use vector search to do RAG. I want to design a delta + lakebase schema for that that works with both the backend (bootstrap, optimize, catboost etc) and the app (corrections, searching, flagging).
+
+## Schema -- Delta
+
+Use Delta tables for the “truth” in a Medallion layout (bronze/silver/gold) and Lakebase Postgres tables as the low‑latency store your app talks to, linked via synced tables and IDs rather than duplicating business logic.
+
+### Bronze (raw)
+bronze.invoices_raw: one row per raw invoice line or document; store file metadata and raw parsed text.​
+
+### Silver (normalized + bootstrap)
+
+silver.invoices: cleaned invoice facts (invoice_id, customer_id, amounts, dates, text fields, embeddings reference, etc.).
+
+silver.categories: append‑only definitions of category spreadsheets (schema_id, version, JSON/string of categories, created_at).
+
+silver.prompts: append‑only prompt versions (prompt_id, version, prompt_text, created_at, linked schema_id).
+
+silver.bootstrap_categorization: results of the LLM bootstrap run (invoice_id, prompt_id, schema_id, llm_category, full_llm_output, confidence, run_id, created_at).
+
+### Gold (reviewed labels + evaluation)
+
+gold.invoice_labels: human‑reviewed “gold” labels for each workflow/category schema (label_id, invoice_id, schema_id, prompt_id, label_version_date, category, labeler_id, source = 'bootstrap'|'human', is_current, created_at).
+
+gold.catboost_training_set: denormalized training rows (invoice_id, features…, gold_category, schema_id, prompt_id, label_version_date).
+
+## Schema -- Lakebase
+
+Use Lakebase Postgres as the transactional layer for search, review, and corrections
+
+Synced (read‑mostly, from Delta) – created via reverse ETL synced tables:​
+
+app.invoices_synced: synced from silver.invoices (primary key: invoice_id) – app uses this to display/search invoices.
+
+app.bootstrap_synced: synced from silver.bootstrap_classifications (primary key: invoice_id + run_id) – includes llm_category and confidence so you can list “low confidence” invoices.
+
+app.reviews: the app writes directly here, Databricks ingests/CDC this back into Delta and merges into gold.invoice_labels.
+
+## Workflow
+
+### LLM bootstrap phase
+
+Pipeline reads silver.invoices, silver.category_schemas, and silver.prompts, generates classifications with ai_ functions, and writes to silver.bootstrap_classifications with confidence and a run_id.
+
+### Surfacing items for review in the app
+
+Use app.bootstrap_synced to query invoices where confidence < threshold or where reviewers search by invoice_id/keywords.​
+
+App joins app.invoices_synced to show invoice context, and when a reviewer corrects a label, it writes a row into app.reviews.
+
+### Promoting reviews to gold
+
+A Databricks pipeline periodically reads app.reviews (via Lakebase → Delta sync or CDC) and:
+
+Inserts/updates gold.invoice_labels using SCD2‑style for a full label history per invoice. This can be very useful if categories are changed over time.
+

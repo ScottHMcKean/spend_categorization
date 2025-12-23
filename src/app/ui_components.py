@@ -309,3 +309,4 @@ def show_error_message(message: str) -> None:
 def show_info_message(message: str) -> None:
     """Display an info message."""
     st.info(message)
+

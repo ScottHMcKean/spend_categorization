@@ -1,8 +1,8 @@
-"""Invoice app package initialization."""
+"""App package initialization."""
 
 __version__ = "0.1.0"
 
-from .config import Config, load_config
+from .config import AppConfig, Config, load_config
 from .database import (
     DatabaseBackend,
     MockBackend,
@@ -29,6 +29,7 @@ from .corrections import (
 
 __all__ = [
     # Config
+    "AppConfig",
     "Config",
     "load_config",
     # Database backend
@@ -52,3 +53,4 @@ __all__ = [
     "initialize_corrections_table",
     "initialize_invoices_table",
 ]
+
