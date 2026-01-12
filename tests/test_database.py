@@ -81,7 +81,7 @@ class TestQueries:
     def test_search_invoices(self, mock_backend, test_config):
         results = search_invoices(
             test_config,
-            search_term="Dell",
+            search_term="bearing",
             limit=10,
             backend=mock_backend,
         )
