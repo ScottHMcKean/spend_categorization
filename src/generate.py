@@ -36,7 +36,8 @@ class GenerateConfig(BaseModel):
     categories_table: str
 
     # LLM settings
-    llm_endpoint: str
+    small_llm_endpoint: str
+    large_llm_endpoint: str
     prompt: str
 
     # Data generation
@@ -90,7 +91,8 @@ class GenerateConfig(BaseModel):
                 "invoices_raw_table": tables["invoices_raw"],
                 "invoices_table": tables["invoices"],
                 "categories_table": tables["categories"],
-                "llm_endpoint": data_gen["llm_endpoint"],
+                "small_llm_endpoint": data_gen["small_llm_endpoint"],
+                "large_llm_endpoint": data_gen["large_llm_endpoint"],
                 "prompt": data_gen["prompt"],
                 "rows": data_gen.get("rows", 10000),
                 "start_date": str(data_gen["start"]),

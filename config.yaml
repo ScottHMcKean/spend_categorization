@@ -225,7 +225,8 @@ generate:
   data:
     catalog: shm
     schema: spend
-    llm_endpoint: databricks-claude-3-7-sonnet
+    small_llm_endpoint: databricks-gpt-oss-20b
+    large_llm_endpoint: databricks-claude-sonnet-4-5
     rows: 10000
     start: 2024-01-01
     end: 2025-12-31
@@ -260,10 +261,6 @@ generate:
 
       Invoice Information:
 
-# =============================================================================
-# CATEGORIZE - Classification pipeline (notebooks 3-6)
-# Creates: prompts, cat_bootstrap, cat_catboost, cat_vectorsearch
-# =============================================================================
 categorize:
   catalog: shm
   schema: spend
@@ -275,10 +272,6 @@ categorize:
     cat_catboost: cat_catboost # CatBoost model predictions
     cat_vectorsearch: cat_vectorsearch # Vector search predictions
 
-# =============================================================================
-# APP - Streamlit application
-# Reads from Lakebase (synced from Delta), writes reviews
-# =============================================================================
 app:
   mode: test # test (mock data) or prod (Lakebase)
   page_size: 50
