@@ -35,7 +35,7 @@ class Config(BaseModel):
     plants: List[Dict[str, Any]]
     categories: Dict[str, Dict[str, List[str]]]  # Loaded from CSV
     categories_file: str
-    category_cost_centre_mapping: Dict[str, str]
+    category_cost_centre_mapping: Dict[str, str]  # Loaded from CSV (category_level_2 -> cost_centre)
 
     # Database
     catalog: str
@@ -177,6 +177,7 @@ class Config(BaseModel):
 
         df = pd.read_csv(csv_path)
         categories = {}
+        category_cost_centre_mapping = {}
         for _, row in df.iterrows():
             l1, l2, l3 = row["category_level_1"], row["category_level_2"], row["category_level_3"]
             if l1 not in categories:
@@ -184,6 +185,9 @@ class Config(BaseModel):
             if l2 not in categories[l1]:
                 categories[l1][l2] = []
             categories[l1][l2].append(l3)
+            # Build cost centre mapping from CSV
+            if l2 not in category_cost_centre_mapping and "cost_centre" in row:
+                category_cost_centre_mapping[l2] = row["cost_centre"]
 
         # Load categorize section (uses same catalog/schema as generate)
         cat = data.get("categorize", {})
@@ -200,7 +204,7 @@ class Config(BaseModel):
             plants=company["plants"],
             categories=categories,
             categories_file=csv_file,
-            category_cost_centre_mapping=company["category_cost_centre_mapping"],
+            category_cost_centre_mapping=category_cost_centre_mapping,
             
             # Database
             catalog=gen_data["catalog"],

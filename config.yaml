@@ -45,39 +45,6 @@ generate:
         id: PLANT-BR
         region: South America
         country: Brazil
-    category_cost_centre_mapping:
-      Raw Materials: CC-100-Production
-      Components: CC-100-Production
-      Sub-Assemblies: CC-100-Production
-      Packaging Materials: CC-700-Logistics
-      Blades & Hub Parts: CC-300-Engineering
-      Electrical Assemblies: CC-100-Production
-      Hydraulic Systems: CC-100-Production
-      Bearings & Seals: CC-100-Production
-      Fasteners: CC-100-Production
-      Castings & Forgings: CC-100-Production
-      MRO (Maintenance, Repair, Operations): CC-200-Maintenance
-      IT & Software: CC-400-IT
-      Facilities & Utilities: CC-200-Maintenance
-      Logistics & Freight: CC-700-Logistics
-      Professional Services: CC-900-Projects
-      Office Supplies: CC-800-Admin
-      Training & HR: CC-600-HR
-      Travel & Entertainment: CC-800-Admin
-      Temporary Labor / Contracting: CC-200-Maintenance
-      Safety & PPE: CC-200-Maintenance
-      Marketing & Advertising: CC-500-Sales
-      Telecom & Connectivity: CC-400-IT
-      Subscriptions & Data Services: CC-400-IT
-      Cleaning & Janitorial: CC-800-Admin
-      Security Services: CC-800-Admin
-      Rent & Leases: CC-800-Admin
-      Recruitment Services: CC-600-HR
-      Events & Conferences: CC-500-Sales
-      Payroll: CC-600-HR
-      Government Services & Taxes: CC-800-Admin
-      Finance Charges: CC-800-Admin
-      Miscellaneous Expenses: CC-800-Admin
 
   # Delta tables created by 0_generate.ipynb
   tables:

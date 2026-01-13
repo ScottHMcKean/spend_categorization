@@ -101,10 +101,10 @@ def test_config_has_required_fields():
 
 
 def test_category_cost_centre_mapping():
-    """Test that category to cost centre mapping exists."""
+    """Test that category to cost centre mapping is loaded from CSV."""
     config = load_config()
     assert len(config.category_cost_centre_mapping) > 0
     
-    # Verify some mappings
+    # Verify some mappings from CSV
     assert "Raw Materials" in config.category_cost_centre_mapping
     assert config.category_cost_centre_mapping["Raw Materials"].startswith("CC-")
