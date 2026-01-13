@@ -2,19 +2,14 @@
 
 import pytest
 import pandas as pd
-from src.app.config import AppConfig
+from src.config import Config
 
 
 @pytest.fixture
 def sample_config():
-    """Provide a sample AppConfig for testing."""
-    return AppConfig(
-        mode="test",
-        page_size=50,
-        invoices_sync="test_invoices_sync",
-        categorization_sync="test_categorization_sync",
-        reviews_table="test_reviews",
-    )
+    """Provide a sample Config for testing."""
+    config = Config.from_yaml()
+    return config
 
 
 @pytest.fixture

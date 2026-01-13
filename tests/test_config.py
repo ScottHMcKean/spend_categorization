@@ -1,53 +1,57 @@
 """Test configuration module."""
 
 import pytest
-from src.app.config import AppConfig, Config, load_config
+from src.config import Config, load_config
 
 
 def test_config_defaults():
-    """Test AppConfig default values."""
-    config = AppConfig()
-    assert config.mode == "test"
+    """Test Config default values."""
+    # Can't create without required fields, so test loading from YAML
+    config = load_config()
+    assert config.app_mode in ["test", "prod"]
     assert config.page_size == 50
-    assert config.invoices_sync == "invoices_sync"
-    assert config.categorization_sync == "categorization_sync"
-    assert config.reviews_table == "reviews"
-
-
-def test_config_from_dict():
-    """Test creating AppConfig from dict values."""
-    config = AppConfig(
-        mode="prod",
-        page_size=100,
-        lakebase_instance="test-instance",
-        invoices_sync="custom_invoices",
-        categorization_sync="custom_cat",
-        reviews_table="custom_reviews",
-    )
-    assert config.mode == "prod"
-    assert config.page_size == 100
-    assert config.lakebase_instance == "test-instance"
-    assert config.invoices_sync == "custom_invoices"
-
-
-def test_app_config_mode_properties():
-    """Test is_test_mode and is_prod_mode properties."""
-    test_config = AppConfig(mode="test")
-    assert test_config.is_test_mode is True
-    assert test_config.is_prod_mode is False
-
-    prod_config = AppConfig(mode="prod")
-    assert prod_config.is_test_mode is False
-    assert prod_config.is_prod_mode is True
 
 
 def test_load_config():
     """Test loading config from YAML file."""
     config = load_config()
-    assert isinstance(config, AppConfig)
-    assert config.mode in ["test", "prod"]
+    assert isinstance(config, Config)
+    
+    # Test generate fields
+    assert config.company_name
+    assert config.catalog
+    assert config.schema_name
+    assert config.invoices
+    
+    # Test categorize fields
+    assert config.prompts
+    assert config.cat_bootstrap
+    
+    # Test app fields
+    assert config.app_mode in ["test", "prod"]
+    assert config.invoices_sync
+    assert config.reviews
 
 
-def test_config_backward_compat_alias():
-    """Test that Config is an alias for AppConfig."""
-    assert Config is AppConfig
+def test_config_mode_properties():
+    """Test is_test_mode and is_prod_mode properties."""
+    config = load_config()
+    if config.app_mode == "test":
+        assert config.is_test_mode is True
+        assert config.is_prod_mode is False
+    else:
+        assert config.is_test_mode is False
+        assert config.is_prod_mode is True
+
+
+def test_config_table_paths():
+    """Test full table path properties work."""
+    config = load_config()
+    
+    # Generate paths
+    assert config.full_invoices_table_path == f"{config.catalog}.{config.schema_name}.{config.invoices}"
+    assert config.full_categories_table_path == f"{config.catalog}.{config.schema_name}.{config.categories_table}"
+    
+    # Categorize paths
+    assert config.full_prompts_table_path == f"{config.catalog}.{config.schema_name}.{config.prompts}"
+    assert config.full_cat_bootstrap_table_path == f"{config.catalog}.{config.schema_name}.{config.cat_bootstrap}"

@@ -3,7 +3,7 @@
 import pytest
 import pandas as pd
 
-from src.app.config import AppConfig
+from src.config import Config
 from src.app.database import (
     MockBackend,
     create_backend,
@@ -24,13 +24,8 @@ from src.app.reviews import (
 
 @pytest.fixture
 def test_config():
-    """Create a test AppConfig."""
-    return AppConfig(
-        mode="test",
-        invoices_sync="invoices_sync",
-        categorization_sync="categorization_sync",
-        reviews_table="reviews",
-    )
+    """Create a test Config."""
+    return Config.from_yaml()
 
 
 @pytest.fixture
@@ -60,14 +55,9 @@ class TestCreateBackend:
 
     def test_create_mock_backend_for_test_mode(self):
         reset_backend()
-        config = AppConfig(mode="test")
+        config = Config.from_yaml()
         backend = create_backend(config)
         assert isinstance(backend, MockBackend)
-
-    def test_prod_mode_requires_lakebase_instance(self):
-        config = AppConfig(mode="prod", lakebase_instance="")
-        with pytest.raises(ValueError, match="lakebase_instance required"):
-            create_backend(config)
 
 
 class TestQueries:

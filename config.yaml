@@ -9,6 +9,7 @@ generate:
   company:
     name: Borealis Wind Systems
     industry: Wind turbine manufacturing
+    categories_file: categories.csv
     cost_centres:
       - CC-100-Production
       - CC-200-Maintenance
@@ -44,144 +45,6 @@ generate:
         id: PLANT-BR
         region: South America
         country: Brazil
-    categories:
-      Direct:
-        Raw Materials:
-          - Structural steel plate
-          - Aluminum ingot
-          - Epoxy resin
-          - Copper wire
-        Components:
-          - Gearmotor
-          - Control PCB
-          - Relay module
-          - Industrial fan
-        Sub-Assemblies:
-          - Blade assembly
-          - Nacelle subsystem
-          - Yaw module
-        Packaging Materials:
-          - Wooden pallet
-          - Stretch film
-          - Export crate
-        Blades & Hub Parts:
-          - Blade shear web
-          - Pitch bearing
-          - Hub flange
-        Electrical Assemblies:
-          - Control cabinet
-          - Main breaker
-          - Grounding busbar
-        Hydraulic Systems:
-          - Hydraulic pump
-          - Hydraulic cylinder
-          - Hydraulic filter
-        Bearings & Seals:
-          - Spherical roller bearing
-          - Deep groove ball bearing
-          - Oil seal
-        Fasteners:
-          - High-tensile bolt
-          - Locknut
-          - Threaded rod
-        Castings & Forgings:
-          - Gear blank
-          - Housing casting
-          - Tower flange
-      Indirect:
-        MRO (Maintenance, Repair, Operations):
-          - Tool rental
-          - Cleaning solvent
-          - Vacuum pump
-          - Air filter
-        IT & Software:
-          - CAD license
-          - Cloud storage
-          - Engineering workstation
-          - Firewall subscription
-        Facilities & Utilities:
-          - Electricity
-          - Water & sewage
-          - Building repair
-          - Facility landscaping
-        Logistics & Freight:
-          - Air freight
-          - Ocean freight
-          - Local courier
-          - Container rental
-        Professional Services:
-          - Legal advice
-          - Audit fee
-          - Engineering consulting
-          - Management consulting
-          - IT consulting
-        Office Supplies:
-          - Printer paper
-          - Desk chair
-          - Toner cartridge
-          - Notebook
-        Training & HR:
-          - Forklift certification course
-          - Safety workshop
-          - Leadership training
-        Travel & Entertainment:
-          - Airfare
-          - Hotel
-          - Taxi/ride share
-          - Group meal
-        Temporary Labor / Contracting:
-          - Site labor hire
-          - Crane rental crew
-          - Temporary electrician
-        Safety & PPE:
-          - Hardhat
-          - Hearing protection
-          - Nitrile gloves
-          - High-vis jacket
-        Marketing & Advertising:
-          - Trade show booth
-          - Digital ad spend
-          - Promotional items
-        Telecom & Connectivity:
-          - Mobile phone plan
-          - Internet service
-          - VOIP subscription
-        Subscriptions & Data Services:
-          - Market data feed
-          - Industry standards subscription
-        Cleaning & Janitorial:
-          - Janitorial service
-          - Cleaning chemicals
-          - Waste bin liners
-        Security Services:
-          - On-site guard service
-          - Alarm monitoring
-        Rent & Leases:
-          - Warehouse lease
-          - Office rent
-        Recruitment Services:
-          - Agency placement fee
-          - Background check
-        Events & Conferences:
-          - Conference registration
-          - Sponsorship fee
-          - Event catering
-      Non-Procureable:
-        Payroll:
-          - Production wages
-          - Management salaries
-          - Shift premiums
-        Government Services & Taxes:
-          - Income tax
-          - Property tax
-          - Regulatory fee
-        Finance Charges:
-          - Loan interest
-          - Bank fees
-          - Late payment penalty
-        Miscellaneous Expenses:
-          - Small write-off
-          - Rounding adjustment
     category_cost_centre_mapping:
       Raw Materials: CC-100-Production
       Components: CC-100-Production
@@ -261,10 +124,11 @@ generate:
 
       Invoice Information:
 
+# =============================================================================
+# CATEGORIZE - Classification models (2_bootstrap, 3_optimize, 4_catboost, 5_vectorsearch)
+# Uses catalog/schema from generate section
+# =============================================================================
 categorize:
-  catalog: shm
-  schema: spend
-
   # Delta tables for categorization
   tables:
     prompts: prompts # Prompt versions used for classification

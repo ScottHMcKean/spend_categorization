@@ -9,12 +9,12 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from .config import AppConfig
+from src.config import Config
 from .database import DatabaseBackend, get_backend
 
 
 def write_review(
-    config: AppConfig,
+    config: Config,
     invoice_id: str,
     category: str,
     schema_id: str = "default",
@@ -43,7 +43,7 @@ def write_review(
         labeler_id = config.default_user
 
     now = datetime.now(timezone.utc).isoformat()
-    table = config.reviews_table
+    table = config.reviews
 
     query = f"""
         INSERT INTO {table}
@@ -69,7 +69,7 @@ def write_review(
 
 
 def write_reviews_batch(
-    config: AppConfig,
+    config: Config,
     reviews: List[Dict],
     backend: Optional[DatabaseBackend] = None,
 ) -> None:
@@ -104,7 +104,7 @@ def write_reviews_batch(
 
 
 def get_review_history(
-    config: AppConfig,
+    config: Config,
     invoice_id: str,
     backend: Optional[DatabaseBackend] = None,
 ) -> pd.DataFrame:
@@ -112,7 +112,7 @@ def get_review_history(
     if backend is None:
         backend = get_backend()
 
-    table = config.reviews_table
+    table = config.reviews
     query = f"""
         SELECT *
         FROM {table}
@@ -124,14 +124,14 @@ def get_review_history(
 
 
 def initialize_reviews_table(
-    config: AppConfig,
+    config: Config,
     backend: Optional[DatabaseBackend] = None,
 ) -> None:
     """Create the reviews table if it doesn't exist."""
     if backend is None:
         backend = get_backend()
 
-    table = config.reviews_table
+    table = config.reviews
 
     create_query = f"""
         CREATE TABLE IF NOT EXISTS {table} (

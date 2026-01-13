@@ -2,7 +2,7 @@
 
 __version__ = "0.1.0"
 
-from .config import AppConfig, Config, load_config
+from src.config import Config, load_config
 from .database import (
     DatabaseBackend,
     MockBackend,
@@ -28,7 +28,6 @@ from .reviews import (
 
 __all__ = [
     # Config
-    "AppConfig",
     "Config",
     "load_config",
     # Database backend

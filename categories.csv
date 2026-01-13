@@ -1,0 +1,103 @@
+category_level_1,category_level_2,category_level_3,category_level_3_description,cost_centre
+Direct,Raw Materials,Structural steel plate,Heavy gauge steel for tower construction,CC-100-Production
+Direct,Raw Materials,Aluminum ingot,Raw aluminum for component casting,CC-100-Production
+Direct,Raw Materials,Epoxy resin,Composite bonding material for blade manufacturing,CC-100-Production
+Direct,Raw Materials,Copper wire,Electrical conductor for power systems,CC-100-Production
+Direct,Components,Gearmotor,Electric motor with integrated gearbox,CC-100-Production
+Direct,Components,Control PCB,Printed circuit board for system control,CC-100-Production
+Direct,Components,Relay module,Electrical switching component,CC-100-Production
+Direct,Components,Industrial fan,Cooling system component,CC-100-Production
+Direct,Sub-Assemblies,Blade assembly,Complete turbine blade with internal structure,CC-100-Production
+Direct,Sub-Assemblies,Nacelle subsystem,Housing unit for turbine components,CC-100-Production
+Direct,Sub-Assemblies,Yaw module,Directional control system,CC-100-Production
+Direct,Packaging Materials,Wooden pallet,Shipping platform for heavy components,CC-700-Logistics
+Direct,Packaging Materials,Stretch film,Protective wrapping material,CC-700-Logistics
+Direct,Packaging Materials,Export crate,Heavy-duty shipping container,CC-700-Logistics
+Direct,Blades & Hub Parts,Blade shear web,Internal structural support for blade,CC-300-Engineering
+Direct,Blades & Hub Parts,Pitch bearing,Bearing for blade angle adjustment,CC-300-Engineering
+Direct,Blades & Hub Parts,Hub flange,Connection point for blade mounting,CC-300-Engineering
+Direct,Electrical Assemblies,Control cabinet,Electrical control housing unit,CC-100-Production
+Direct,Electrical Assemblies,Main breaker,Primary electrical safety switch,CC-100-Production
+Direct,Electrical Assemblies,Grounding busbar,Electrical grounding conductor,CC-100-Production
+Direct,Hydraulic Systems,Hydraulic pump,Fluid pressure generation unit,CC-100-Production
+Direct,Hydraulic Systems,Hydraulic cylinder,Linear actuator for movement control,CC-100-Production
+Direct,Hydraulic Systems,Hydraulic filter,Fluid contamination removal system,CC-100-Production
+Direct,Bearings & Seals,Spherical roller bearing,Heavy-duty rotational bearing,CC-100-Production
+Direct,Bearings & Seals,Deep groove ball bearing,General purpose rotational bearing,CC-100-Production
+Direct,Bearings & Seals,Oil seal,Fluid containment component,CC-100-Production
+Direct,Fasteners,High-tensile bolt,High-strength fastening bolt,CC-100-Production
+Direct,Fasteners,Locknut,Self-locking threaded fastener,CC-100-Production
+Direct,Fasteners,Threaded rod,Continuous thread fastening element,CC-100-Production
+Direct,Castings & Forgings,Gear blank,Pre-machined gear component,CC-100-Production
+Direct,Castings & Forgings,Housing casting,Metal enclosure component,CC-100-Production
+Direct,Castings & Forgings,Tower flange,Connection ring for tower sections,CC-100-Production
+Indirect,"MRO (Maintenance Repair Operations)",Tool rental,Temporary equipment rental for maintenance,CC-200-Maintenance
+Indirect,"MRO (Maintenance Repair Operations)",Cleaning solvent,Chemical cleaning agents,CC-200-Maintenance
+Indirect,"MRO (Maintenance Repair Operations)",Vacuum pump,Industrial vacuum equipment,CC-200-Maintenance
+Indirect,"MRO (Maintenance Repair Operations)",Air filter,Filtration system component,CC-200-Maintenance
+Indirect,IT & Software,CAD license,Computer-aided design software,CC-400-IT
+Indirect,IT & Software,Cloud storage,Data storage subscription service,CC-400-IT
+Indirect,IT & Software,Engineering workstation,High-performance computer system,CC-400-IT
+Indirect,IT & Software,Firewall subscription,Network security service,CC-400-IT
+Indirect,Facilities & Utilities,Electricity,Electrical power consumption,CC-200-Maintenance
+Indirect,Facilities & Utilities,Water & sewage,Water utility services,CC-200-Maintenance
+Indirect,Facilities & Utilities,Building repair,Facility maintenance work,CC-200-Maintenance
+Indirect,Facilities & Utilities,Facility landscaping,Grounds maintenance service,CC-200-Maintenance
+Indirect,Logistics & Freight,Air freight,Expedited air transport,CC-700-Logistics
+Indirect,Logistics & Freight,Ocean freight,Maritime cargo transport,CC-700-Logistics
+Indirect,Logistics & Freight,Local courier,Local delivery service,CC-700-Logistics
+Indirect,Logistics & Freight,Container rental,Shipping container lease,CC-700-Logistics
+Indirect,Professional Services,Legal advice,Legal consultation services,CC-900-Projects
+Indirect,Professional Services,Audit fee,Financial audit services,CC-900-Projects
+Indirect,Professional Services,Engineering consulting,Technical advisory services,CC-900-Projects
+Indirect,Professional Services,Management consulting,Business strategy consulting,CC-900-Projects
+Indirect,Professional Services,IT consulting,Information technology advisory,CC-900-Projects
+Indirect,Office Supplies,Printer paper,Office printing paper,CC-800-Admin
+Indirect,Office Supplies,Desk chair,Office seating furniture,CC-800-Admin
+Indirect,Office Supplies,Toner cartridge,Printer consumable,CC-800-Admin
+Indirect,Office Supplies,Notebook,Writing materials,CC-800-Admin
+Indirect,Training & HR,Forklift certification course,Equipment operation training,CC-600-HR
+Indirect,Training & HR,Safety workshop,Workplace safety training,CC-600-HR
+Indirect,Training & HR,Leadership training,Management development program,CC-600-HR
+Indirect,Travel & Entertainment,Airfare,Business flight tickets,CC-800-Admin
+Indirect,Travel & Entertainment,Hotel,Business accommodation,CC-800-Admin
+Indirect,Travel & Entertainment,Taxi/ride share,Local transportation,CC-800-Admin
+Indirect,Travel & Entertainment,Group meal,Business dining expense,CC-800-Admin
+Indirect,Temporary Labor / Contracting,Site labor hire,Temporary construction workers,CC-200-Maintenance
+Indirect,Temporary Labor / Contracting,Crane rental crew,Heavy equipment operators,CC-200-Maintenance
+Indirect,Temporary Labor / Contracting,Temporary electrician,Contract electrical work,CC-200-Maintenance
+Indirect,Safety & PPE,Hardhat,Head protection equipment,CC-200-Maintenance
+Indirect,Safety & PPE,Hearing protection,Ear protection device,CC-200-Maintenance
+Indirect,Safety & PPE,Nitrile gloves,Hand protection,CC-200-Maintenance
+Indirect,Safety & PPE,High-vis jacket,Visibility safety clothing,CC-200-Maintenance
+Indirect,Marketing & Advertising,Trade show booth,Exhibition space rental,CC-500-Sales
+Indirect,Marketing & Advertising,Digital ad spend,Online advertising costs,CC-500-Sales
+Indirect,Marketing & Advertising,Promotional items,Branded merchandise,CC-500-Sales
+Indirect,Telecom & Connectivity,Mobile phone plan,Cellular service subscription,CC-400-IT
+Indirect,Telecom & Connectivity,Internet service,Broadband connectivity,CC-400-IT
+Indirect,Telecom & Connectivity,VOIP subscription,Voice over IP service,CC-400-IT
+Indirect,Subscriptions & Data Services,Market data feed,Financial market information,CC-400-IT
+Indirect,Subscriptions & Data Services,Industry standards subscription,Technical standards access,CC-400-IT
+Indirect,Cleaning & Janitorial,Janitorial service,Professional cleaning service,CC-800-Admin
+Indirect,Cleaning & Janitorial,Cleaning chemicals,Cleaning product supplies,CC-800-Admin
+Indirect,Cleaning & Janitorial,Waste bin liners,Trash bag supplies,CC-800-Admin
+Indirect,Security Services,On-site guard service,Security personnel,CC-800-Admin
+Indirect,Security Services,Alarm monitoring,Security system monitoring,CC-800-Admin
+Indirect,Rent & Leases,Warehouse lease,Storage facility rental,CC-800-Admin
+Indirect,Rent & Leases,Office rent,Office space rental,CC-800-Admin
+Indirect,Recruitment Services,Agency placement fee,Recruitment agency fees,CC-600-HR
+Indirect,Recruitment Services,Background check,Employment screening service,CC-600-HR
+Indirect,Events & Conferences,Conference registration,Event attendance fee,CC-500-Sales
+Indirect,Events & Conferences,Sponsorship fee,Event sponsorship payment,CC-500-Sales
+Indirect,Events & Conferences,Event catering,Conference food service,CC-500-Sales
+Non-Procureable,Payroll,Production wages,Manufacturing worker pay,CC-600-HR
+Non-Procureable,Payroll,Management salaries,Executive compensation,CC-600-HR
+Non-Procureable,Payroll,Shift premiums,Overtime and shift differential pay,CC-600-HR
+Non-Procureable,Government Services & Taxes,Income tax,Corporate income tax payment,CC-800-Admin
+Non-Procureable,Government Services & Taxes,Property tax,Real estate tax payment,CC-800-Admin
+Non-Procureable,Government Services & Taxes,Regulatory fee,Government compliance fees,CC-800-Admin
+Non-Procureable,Finance Charges,Loan interest,Debt service interest,CC-800-Admin
+Non-Procureable,Finance Charges,Bank fees,Banking service charges,CC-800-Admin
+Non-Procureable,Finance Charges,Late payment penalty,Payment delay charges,CC-800-Admin
+Non-Procureable,Miscellaneous Expenses,Small write-off,Minor expense write-off,CC-800-Admin
+Non-Procureable,Miscellaneous Expenses,Rounding adjustment,Accounting rounding correction,CC-800-Admin

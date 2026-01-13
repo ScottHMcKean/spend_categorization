@@ -13,7 +13,7 @@ import streamlit as st
 import pandas as pd
 from typing import List, Dict
 
-from src.app.config import load_config
+from src.config import load_config
 from src.app.database import init_backend, get_backend
 from src.app import (
     search_invoices,

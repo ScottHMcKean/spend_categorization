@@ -9,12 +9,12 @@ from typing import List, Optional
 
 import pandas as pd
 
-from .config import AppConfig
+from src.config import Config
 from .database import DatabaseBackend, get_backend
 
 
 def search_invoices(
-    config: AppConfig,
+    config: Config,
     search_term: str,
     search_fields: Optional[List[str]] = None,
     limit: int = 100,
@@ -43,7 +43,7 @@ def search_invoices(
 
 
 def get_flagged_invoices(
-    config: AppConfig,
+    config: Config,
     limit: int = 100,
     backend: Optional[DatabaseBackend] = None,
 ) -> pd.DataFrame:
@@ -67,7 +67,7 @@ def get_flagged_invoices(
 
 
 def get_invoices_by_ids(
-    config: AppConfig,
+    config: Config,
     invoice_ids: List[str],
     backend: Optional[DatabaseBackend] = None,
 ) -> pd.DataFrame:
@@ -90,7 +90,7 @@ def get_invoices_by_ids(
 
 
 def get_available_categories(
-    config: AppConfig,
+    config: Config,
     backend: Optional[DatabaseBackend] = None,
 ) -> List[str]:
     """Get distinct categories from categorization results."""
@@ -109,7 +109,7 @@ def get_available_categories(
 
 
 def get_invoice_with_categorization(
-    config: AppConfig,
+    config: Config,
     invoice_id: str,
     backend: Optional[DatabaseBackend] = None,
 ) -> pd.DataFrame:

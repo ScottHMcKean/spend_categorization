@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import pandas as pd
 
 if TYPE_CHECKING:
-    from .config import AppConfig
+    from src.config import Config  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class MockBackend(DatabaseBackend):
     """Mock backend for test mode using in-memory data."""
 
     def __init__(self):
-        from src.utils import generate_sample_invoices, get_sample_categories
+        from src.test_data import generate_sample_invoices, get_sample_categories
 
         self._invoices = generate_sample_invoices(100)
         self._categories = get_sample_categories()
@@ -107,7 +107,9 @@ class MockBackend(DatabaseBackend):
             if "join" in query_lower and "categorization" in query_lower:
                 # Merge invoices with categorization
                 df = df.merge(
-                    self._categorization[["invoice_id", "category", "confidence", "run_id"]],
+                    self._categorization[
+                        ["invoice_id", "category", "confidence", "run_id"]
+                    ],
                     on="invoice_id",
                     how="left",
                     suffixes=("", "_cat"),
@@ -121,6 +123,7 @@ class MockBackend(DatabaseBackend):
                 if "confidence <" in query_lower:
                     threshold = 0.7  # Default
                     import re
+
                     match = re.search(r"confidence\s*<\s*([\d.]+)", query_lower)
                     if match:
                         threshold = float(match.group(1))
@@ -133,15 +136,22 @@ class MockBackend(DatabaseBackend):
                     pattern = parameters["search_pattern"].replace("%", "")
                     if pattern:
                         mask = (
-                            df["invoice_number"].str.contains(pattern, case=False, na=False)
-                            | df["vendor_name"].str.contains(pattern, case=False, na=False)
-                            | df["description"].str.contains(pattern, case=False, na=False)
+                            df["invoice_number"].str.contains(
+                                pattern, case=False, na=False
+                            )
+                            | df["vendor_name"].str.contains(
+                                pattern, case=False, na=False
+                            )
+                            | df["description"].str.contains(
+                                pattern, case=False, na=False
+                            )
                         )
                         df = df[mask]
 
                 # Filter by IDs
                 if "invoice_id in" in query_lower:
                     import re
+
                     match = re.search(r"invoice_id in \(([^)]+)\)", query_lower)
                     if match:
                         ids = re.findall(r"'([^']+)'", query)
@@ -149,7 +159,10 @@ class MockBackend(DatabaseBackend):
                             df = df[df["invoice_id"].isin(ids)]
 
                 # Flagged invoices (old style without join)
-                if "confidence_score <" in query_lower or "category is null" in query_lower:
+                if (
+                    "confidence_score <" in query_lower
+                    or "category is null" in query_lower
+                ):
                     df = df[(df["confidence_score"] < 0.7) | (df["category"].isna())]
                     df = df.sort_values("confidence_score")
 
@@ -157,6 +170,7 @@ class MockBackend(DatabaseBackend):
             if "limit" in query_lower:
                 try:
                     import re
+
                     match = re.search(r"limit\s+(\d+)", query_lower)
                     if match:
                         limit = int(match.group(1))
@@ -288,7 +302,7 @@ class LakebaseBackend(DatabaseBackend):
             return False
 
 
-def create_backend(config: AppConfig) -> DatabaseBackend:
+def create_backend(config: Config) -> DatabaseBackend:
     """Factory function to create the appropriate backend."""
     if config.is_test_mode:
         logger.info("Creating MockBackend for test mode")
@@ -318,7 +332,7 @@ def get_backend() -> DatabaseBackend:
     return _backend
 
 
-def init_backend(config: AppConfig) -> DatabaseBackend:
+def init_backend(config: Config) -> DatabaseBackend:
     """Initialize the global database backend."""
     global _backend
     _backend = create_backend(config)
