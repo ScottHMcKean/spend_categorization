@@ -1,0 +1,6 @@
+order_id,source,description,actual_level_1,actual_level_2,actual_level_3,pred_level_1,pred_level_2,pred_level_3,confidence,categorized_at,processed_at
+ORD-001,vectorsearch,Spherical roller bearing for main shaft assembly,Direct,Bearings & Seals,Spherical roller bearing,Direct,Bearings & Seals,Spherical roller bearing,0.98,2026-01-15 14:32:11,2026-01-15 14:32:11
+ORD-002,vectorsearch,Cloud storage subscription for data warehouse,Indirect,IT & Software,SaaS subscription,Indirect,IT & Software,SaaS subscription,0.96,2026-01-15 14:32:12,2026-01-15 14:32:12
+ORD-003,vectorsearch,Fiber cement roofing panels for facility,Indirect,Facilities & Utilities,Building materials,Indirect,Facilities & Utilities,Building materials,0.94,2026-01-15 14:32:13,2026-01-15 14:32:13
+ORD-004,vectorsearch,Professional consulting for process optimization,Indirect,Professional Services,Business consulting,Indirect,Professional Services,Business consulting,0.95,2026-01-15 14:32:14,2026-01-15 14:32:14
+ORD-005,vectorsearch,Office printer paper and supplies,Indirect,Office Supplies,Office consumables,Indirect,Office Supplies,Office consumables,0.97,2026-01-15 14:32:15,2026-01-15 14:32:15

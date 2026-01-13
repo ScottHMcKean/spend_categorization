@@ -29,19 +29,7 @@ def test_load_config():
     
     # Test app fields
     assert config.app_mode in ["test", "prod"]
-    assert config.invoices_sync
     assert config.reviews
-
-
-def test_config_mode_properties():
-    """Test is_test_mode and is_prod_mode properties."""
-    config = load_config()
-    if config.app_mode == "test":
-        assert config.is_test_mode is True
-        assert config.is_prod_mode is False
-    else:
-        assert config.is_test_mode is False
-        assert config.is_prod_mode is True
 
 
 def test_config_table_paths():

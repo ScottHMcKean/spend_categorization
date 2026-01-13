@@ -46,12 +46,12 @@ def render_invoice_table(
             st.markdown("**Select All**")
 
         if select_all:
-            newly_selected = set(df["invoice_id"].tolist())
+            newly_selected = set(df["order_id"].tolist())
             return newly_selected
 
     # Display table with checkboxes
     for idx, row in df.iterrows():
-        invoice_id = row["invoice_id"]
+        order_id = row["order_id"]
 
         col1, col2 = st.columns([0.5, 9.5])
 
@@ -59,30 +59,56 @@ def render_invoice_table(
             if selectable:
                 is_checked = st.checkbox(
                     "Select",
-                    key=f"{key_prefix}_checkbox_{invoice_id}_{idx}",
-                    value=invoice_id in selected_ids,
+                    key=f"{key_prefix}_checkbox_{order_id}_{idx}",
+                    value=order_id in selected_ids,
                     label_visibility="collapsed",
                 )
                 if is_checked:
-                    newly_selected.add(invoice_id)
+                    newly_selected.add(order_id)
 
         with col2:
             # Display invoice details in an expander
             with st.expander(
-                f"Invoice #{row.get('invoice_number', invoice_id)} - {row.get('vendor_name', 'N/A')}"
+                f"Order {order_id} - {row.get('supplier', 'N/A')}"
             ):
                 # Create two columns for details
                 detail_col1, detail_col2 = st.columns(2)
 
                 with detail_col1:
-                    st.write(f"**Invoice ID:** {invoice_id}")
-                    st.write(f"**Date:** {row.get('invoice_date', 'N/A')}")
-                    st.write(f"**Amount:** ${row.get('amount', 0):,.2f}")
+                    st.write(f"**Order ID:** {order_id}")
+                    # Display date from correct field
+                    if "date" in row and pd.notna(row["date"]):
+                        st.write(f"**Date:** {row['date']}")
+                    else:
+                        st.write(f"**Date:** N/A")
+                    
+                    # Display amount/total
+                    if "total" in row and pd.notna(row["total"]):
+                        st.write(f"**Amount:** ${row['total']:,.2f}")
+                    elif "amount" in row and pd.notna(row["amount"]):
+                        st.write(f"**Amount:** ${row['amount']:,.2f}")
+                    else:
+                        st.write(f"**Amount:** N/A")
 
                 with detail_col2:
-                    st.write(f"**Category:** {row.get('category', 'N/A')}")
-                    confidence = row.get("confidence_score", 0)
-                    st.write(f"**Confidence:** {confidence:.2%}")
+                    # Display predicted category from categorizations
+                    if "pred_level_2" in row and pd.notna(row["pred_level_2"]):
+                        st.write(f"**Category:** {row['pred_level_2']}")
+                    elif "category_level_2" in row and pd.notna(row["category_level_2"]):
+                        st.write(f"**Category:** {row['category_level_2']}")
+                    else:
+                        st.write(f"**Category:** N/A")
+                    
+                    # Display confidence if available
+                    if "confidence" in row and pd.notna(row["confidence"]):
+                        conf = row["confidence"]
+                        # Normalize confidence (could be 0-1 or 0-10)
+                        if conf > 1:
+                            conf = conf / 10.0
+                        st.write(f"**Confidence:** {conf*100:.1f}%")
+                    else:
+                        st.write(f"**Confidence:** N/A")
+                    
                     st.write(f"**Description:** {row.get('description', 'N/A')}")
 
     return newly_selected
@@ -176,24 +202,24 @@ def render_review_pane(
         return
 
     # Initialize session state for current invoice index if not exists
-    if "current_invoice_idx" not in st.session_state:
-        st.session_state.current_invoice_idx = 0
+    if "current_order_idx" not in st.session_state:
+        st.session_state.current_order_idx = 0
 
     # Ensure index is within bounds
-    if st.session_state.current_invoice_idx >= len(review_invoices):
-        st.session_state.current_invoice_idx = 0
+    if st.session_state.current_order_idx >= len(review_invoices):
+        st.session_state.current_order_idx = 0
 
     # Get current invoice
-    current_idx = st.session_state.current_invoice_idx
+    current_idx = st.session_state.current_order_idx
     row = review_invoices.iloc[current_idx]
-    invoice_id = row["invoice_id"]
+    order_id = row["order_id"]
 
     # Display invoice details - compact layout
     col1, col2, col3 = st.columns([2, 2, 1])
 
     with col1:
-        st.markdown(f"### Invoice #{row.get('invoice_number', invoice_id)}")
-        st.write(f"**Vendor:** {row.get('vendor_name', 'N/A')}")
+        st.markdown(f"### Order {row['order_id']}")
+        st.write(f"**Supplier:** {row.get('supplier', 'N/A')}")
 
     with col2:
         st.write(f"**Amount:** ${row.get('amount', 0):,.2f}")
@@ -225,7 +251,7 @@ def render_review_pane(
             "Primary Category",
             options=available_categories,
             index=default_idx,
-            key=f"primary_cat_{invoice_id}_{current_idx}",
+            key=f"primary_cat_{order_id}_{current_idx}",
             help=f"Current: {current_category if current_category else 'None'}",
         )
 
@@ -234,13 +260,13 @@ def render_review_pane(
             "Secondary Category",
             options=["None"] + available_categories,
             index=0,
-            key=f"secondary_cat_{invoice_id}_{current_idx}",
+            key=f"secondary_cat_{order_id}_{current_idx}",
             help="Optional secondary classification",
         )
 
     comment = st.text_area(
         "Comment (optional)",
-        key=f"comment_{invoice_id}_{current_idx}",
+        key=f"comment_{order_id}_{current_idx}",
         placeholder="Explain the correction...",
         height=70,
     )
@@ -256,7 +282,7 @@ def render_review_pane(
             disabled=(current_idx == 0),
             use_container_width=True,
         ):
-            st.session_state.current_invoice_idx -= 1
+            st.session_state.current_order_idx -= 1
             st.rerun()
 
     with col2:
@@ -265,7 +291,7 @@ def render_review_pane(
             disabled=(current_idx >= len(review_invoices) - 1),
             use_container_width=True,
         ):
-            st.session_state.current_invoice_idx += 1
+            st.session_state.current_order_idx += 1
             st.rerun()
 
     with col3:
@@ -276,22 +302,22 @@ def render_review_pane(
                 combined_category = f"{primary_category} | {secondary_category}"
 
             correction = {
-                "invoice_id": invoice_id,
-                "transaction_ids": [row.get("transaction_id", invoice_id)],
+                "order_id": order_id,
+                "transaction_ids": [row.get("transaction_id", order_id)],
                 "corrected_category": combined_category,
                 "comment": comment if comment else None,
             }
             on_submit_corrections([correction])
 
             # Adjust index if needed after submission
-            if st.session_state.current_invoice_idx >= len(review_invoices) - 1:
-                st.session_state.current_invoice_idx = max(0, len(review_invoices) - 2)
+            if st.session_state.current_order_idx >= len(review_invoices) - 1:
+                st.session_state.current_order_idx = max(0, len(review_invoices) - 2)
 
             st.rerun()
 
     with col4:
         if st.button("Finish", use_container_width=True):
-            st.session_state.current_invoice_idx = 0
+            st.session_state.current_order_idx = 0
             on_clear_review()
             st.rerun()
 

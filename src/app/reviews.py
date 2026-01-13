@@ -1,71 +1,69 @@
-"""Reviews table writer for human-in-the-loop corrections.
+"""Review submission functions.
 
-The app writes reviews to Lakebase. Databricks ingests these back to Delta
-and merges into gold.labels using SCD2.
+Writes to cat_reviews table (append-only).
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-import pandas as pd
-
 from src.config import Config
-from .database import DatabaseBackend, get_backend
+from .database import DatabaseBackend
+
+logger = logging.getLogger(__name__)
 
 
 def write_review(
     config: Config,
-    invoice_id: str,
-    category: str,
-    schema_id: str = "default",
-    prompt_id: str = "default",
-    labeler_id: Optional[str] = None,
-    source: str = "human",
+    order_id: str,
+    source: str,
+    original_level_1: str,
+    original_level_2: str,
+    original_level_3: str,
+    reviewed_level_1: str,
+    reviewed_level_2: str,
+    reviewed_level_3: str,
+    reviewer: str,
+    review_status: str = "corrected",
+    comments: str = "",
     backend: Optional[DatabaseBackend] = None,
 ) -> None:
-    """
-    Write a single review to the reviews table.
-
-    Args:
-        config: App configuration
-        invoice_id: Invoice being reviewed
-        category: Assigned category
-        schema_id: Category schema version
-        prompt_id: Prompt version used
-        labeler_id: User making the review
-        source: 'human' or 'bootstrap'
-        backend: Optional backend instance
-    """
+    """Write a single review to cat_reviews table."""
     if backend is None:
+        from .database import get_backend
         backend = get_backend()
 
-    if labeler_id is None:
-        labeler_id = config.default_user
-
-    now = datetime.now(timezone.utc).isoformat()
-    table = config.reviews
-
     query = f"""
-        INSERT INTO {table}
-        (invoice_id, schema_id, prompt_id, category, label_version_date,
-         labeler_id, source, is_current, created_at)
-        VALUES (:invoice_id, :schema_id, :prompt_id, :category, :label_version_date,
-                :labeler_id, :source, TRUE, :created_at)
+        INSERT INTO {config.full_cat_reviews_table_path}
+        (order_id, source, reviewer, review_date, 
+         original_level_1, original_level_2, original_level_3,
+         reviewed_level_1, reviewed_level_2, reviewed_level_3,
+         review_status, comments, created_at)
+        VALUES 
+        (:order_id, :source, :reviewer, :review_date,
+         :original_level_1, :original_level_2, :original_level_3,
+         :reviewed_level_1, :reviewed_level_2, :reviewed_level_3,
+         :review_status, :comments, :created_at)
     """
-
-    backend.execute_write(
-        query,
-        {
-            "invoice_id": invoice_id,
-            "schema_id": schema_id,
-            "prompt_id": prompt_id,
-            "category": category,
-            "label_version_date": now,
-            "labeler_id": labeler_id,
-            "source": source,
-            "created_at": now,
-        },
-    )
+    
+    parameters = {
+        "order_id": order_id,
+        "source": source,
+        "reviewer": reviewer,
+        "review_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "original_level_1": original_level_1,
+        "original_level_2": original_level_2,
+        "original_level_3": original_level_3,
+        "reviewed_level_1": reviewed_level_1,
+        "reviewed_level_2": reviewed_level_2,
+        "reviewed_level_3": reviewed_level_3,
+        "review_status": review_status,
+        "comments": comments,
+        "created_at": datetime.now(timezone.utc),
+    }
+    
+    backend.execute_write(query, parameters)
+    logger.info(f"Wrote review for order_id={order_id}")
 
 
 def write_reviews_batch(
@@ -73,92 +71,59 @@ def write_reviews_batch(
     reviews: List[Dict],
     backend: Optional[DatabaseBackend] = None,
 ) -> None:
-    """
-    Write multiple reviews in a batch.
-
-    Args:
-        config: App configuration
-        reviews: List of review dicts with keys:
-            - invoice_id
-            - category
-            - schema_id (optional)
-            - prompt_id (optional)
-            - labeler_id (optional)
-            - source (optional, default 'human')
-        backend: Optional backend instance
-    """
-    if backend is None:
-        backend = get_backend()
-
+    """Write multiple reviews."""
     for review in reviews:
-        write_review(
-            config=config,
-            invoice_id=review["invoice_id"],
-            category=review["category"],
-            schema_id=review.get("schema_id", "default"),
-            prompt_id=review.get("prompt_id", "default"),
-            labeler_id=review.get("labeler_id"),
-            source=review.get("source", "human"),
-            backend=backend,
-        )
+        write_review(config, **review, backend=backend)
 
 
 def get_review_history(
     config: Config,
-    invoice_id: str,
+    order_id: str,
     backend: Optional[DatabaseBackend] = None,
-) -> pd.DataFrame:
-    """Get all reviews for an invoice."""
+) -> List[Dict]:
+    """Get review history for an order."""
     if backend is None:
+        from .database import get_backend
         backend = get_backend()
 
-    table = config.reviews
     query = f"""
         SELECT *
-        FROM {table}
-        WHERE invoice_id = :invoice_id
+        FROM {config.full_cat_reviews_table_path}
+        WHERE order_id = :order_id
         ORDER BY created_at DESC
     """
-
-    return backend.execute_query(query, {"invoice_id": invoice_id})
+    
+    df = backend.execute_query(query, {"order_id": order_id})
+    return df.to_dict("records") if not df.empty else []
 
 
 def initialize_reviews_table(
     config: Config,
     backend: Optional[DatabaseBackend] = None,
 ) -> None:
-    """Create the reviews table if it doesn't exist."""
+    """Initialize cat_reviews table if needed."""
     if backend is None:
+        from .database import get_backend
         backend = get_backend()
 
-    table = config.reviews
-
-    create_query = f"""
-        CREATE TABLE IF NOT EXISTS {table} (
-            label_id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            invoice_id VARCHAR(100) NOT NULL,
-            schema_id VARCHAR(100) NOT NULL,
-            prompt_id VARCHAR(100) NOT NULL,
-            category VARCHAR(200) NOT NULL,
-            label_version_date TIMESTAMPTZ NOT NULL,
-            labeler_id VARCHAR(100),
-            source VARCHAR(20) NOT NULL DEFAULT 'human',
-            is_current BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    query = f"""
+        CREATE TABLE IF NOT EXISTS {config.full_cat_reviews_table_path} (
+            review_id STRING,
+            order_id STRING,
+            source STRING,
+            reviewer STRING,
+            review_date DATE,
+            original_level_1 STRING,
+            original_level_2 STRING,
+            original_level_3 STRING,
+            reviewed_level_1 STRING,
+            reviewed_level_2 STRING,
+            reviewed_level_3 STRING,
+            review_status STRING,
+            comments STRING,
+            created_at TIMESTAMP
         )
     """
-
-    backend.execute_write(create_query)
-
-    # Create indexes
-    indexes = [
-        f"CREATE INDEX IF NOT EXISTS idx_{table}_invoice ON {table} (invoice_id)",
-        f"CREATE INDEX IF NOT EXISTS idx_{table}_current ON {table} (is_current) WHERE is_current = TRUE",
-    ]
-
-    for idx in indexes:
-        try:
-            backend.execute_write(idx)
-        except Exception:
-            pass
-
+    
+    backend.execute_write(query)
+    logger.info("Initialized cat_reviews table")

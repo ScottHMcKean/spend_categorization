@@ -10,6 +10,15 @@ Modes:
 """
 
 import streamlit as st
+
+# Configure page - must be first Streamlit command
+st.set_page_config(
+    page_title="Spend Categorization",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 import pandas as pd
 from typing import List, Dict
 
@@ -188,12 +197,12 @@ def handle_load_flagged():
         show_error_message(f"Failed to load flagged invoices: {str(e)}")
 
 
-def add_to_review_queue(invoice_ids: set):
+def add_to_review_queue(order_ids: set):
     """Add invoices to review queue."""
-    if not invoice_ids:
+    if not order_ids:
         return
 
-    st.session_state.selected_for_review.update(invoice_ids)
+    st.session_state.selected_for_review.update(order_ids)
 
     try:
         review_df = get_invoices_by_ids(
@@ -217,7 +226,7 @@ def handle_submit_reviews(reviews: List[Dict]):
         for r in reviews:
             formatted_reviews.append(
                 {
-                    "invoice_id": r["invoice_id"],
+                    "order_id": r["order_id"],
                     "category": r["corrected_category"],
                     "schema_id": "default",
                     "prompt_id": "default",
@@ -228,7 +237,7 @@ def handle_submit_reviews(reviews: List[Dict]):
 
         write_reviews_batch(config, formatted_reviews)
 
-        if config.is_test_mode:
+        if config.app_mode == "test":
             show_success_message(f"[TEST MODE] Submitted {len(reviews)} review(s)")
         else:
             show_success_message(f"Submitted {len(reviews)} review(s)")
@@ -237,9 +246,9 @@ def handle_submit_reviews(reviews: List[Dict]):
 
         # Remove from queue
         for r in reviews:
-            invoice_id = r["invoice_id"]
-            if invoice_id in st.session_state.selected_for_review:
-                st.session_state.selected_for_review.remove(invoice_id)
+            order_id = r["order_id"]
+            if order_id in st.session_state.selected_for_review:
+                st.session_state.selected_for_review.remove(order_id)
 
         # Update review invoices
         if st.session_state.selected_for_review:
@@ -272,8 +281,8 @@ def render_sidebar():
         st.title("Spend Categorization")
         st.divider()
 
-        mode = config.mode.upper()
-        if config.is_test_mode:
+        mode = config.app_mode.upper()
+        if config.app_mode == "test":
             st.caption(f"Mode: **{mode}** (Mock Data)")
         else:
             st.caption(f"Mode: **{mode}** (Lakebase)")
@@ -322,7 +331,7 @@ def main():
 
     render_sidebar()
 
-    if config.is_test_mode:
+    if config.app_mode == "test":
         st.info("**Test Mode**: Using sample data. No database changes will be made.")
 
     tab1, tab2, tab3 = st.tabs(["Search", "Flagged Invoices", "Review & Correct"])

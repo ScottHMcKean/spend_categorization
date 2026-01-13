@@ -45,168 +45,106 @@ class DatabaseBackend(ABC):
 
 
 class MockBackend(DatabaseBackend):
-    """Mock backend for test mode using in-memory data."""
+    """Mock backend for test mode using CSV files from assets/."""
 
-    def __init__(self):
-        from src.test_data import generate_sample_invoices, get_sample_categories
+    def __init__(self, config: "Config"):
+        from pathlib import Path
 
-        self._invoices = generate_sample_invoices(100)
-        self._categories = get_sample_categories()
+        self.config = config
+        assets_dir = Path(__file__).parent.parent.parent / "assets"
 
-        # Create mock categorization data (simulates categorization_sync)
-        self._categorization = pd.DataFrame(
-            {
-                "invoice_id": self._invoices["invoice_id"],
-                "category": self._invoices["category"],
-                "confidence": self._invoices["confidence_score"],
-                "run_id": "mock_run_001",
-            }
-        )
+        # Load mock data from CSV files
+        try:
+            # Load invoices (main data source)
+            invoices_file = assets_dir / "invoices.csv"
+            if invoices_file.exists():
+                self._invoices = pd.read_csv(invoices_file)
+                logger.info(
+                    f"MockBackend loaded {len(self._invoices)} invoices from {invoices_file}"
+                )
+            else:
+                logger.warning(f"Invoices file not found: {invoices_file}")
+                self._invoices = pd.DataFrame()
 
-        self._reviews = pd.DataFrame(
-            columns=[
-                "label_id",
-                "invoice_id",
-                "schema_id",
-                "prompt_id",
-                "category",
-                "label_version_date",
-                "labeler_id",
-                "source",
-                "is_current",
-                "created_at",
-            ]
-        )
+            # Load the appropriate classification table based on config
+            classification_file = f"cat_{config.categorization_source}.csv"
+            self._categorizations = pd.read_csv(assets_dir / classification_file)
+
+            # Load reviews
+            self._reviews = pd.read_csv(assets_dir / "cat_reviews.csv")
+
+            # Load categories from main categories.csv
+            categories_file = config.categories_file
+            self._categories = pd.read_csv(
+                Path(__file__).parent.parent.parent / categories_file
+            )
+
+            logger.info(
+                f"MockBackend initialized with {len(self._categorizations)} classifications from {classification_file}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to load mock data: {e}")
+            # Fallback to empty DataFrames
+            self._invoices = pd.DataFrame()
+            self._categorizations = pd.DataFrame()
+            self._reviews = pd.DataFrame()
+            self._categories = pd.DataFrame()
 
     def execute_query(
         self, query: str, parameters: Optional[Dict[str, Any]] = None
     ) -> pd.DataFrame:
-        query_lower = query.lower().strip()
+        """Execute a SQL query on mock data."""
+        query_lower = query.lower()
 
-        # Distinct category query from categorization_sync
-        if "distinct" in query_lower and "category" in query_lower:
-            if "categorization" in query_lower:
-                return pd.DataFrame({"category": self._categories})
-            return pd.DataFrame({"category": self._categories})
+        # Handle invoice queries
+        if "invoices" in query_lower and "cat_" not in query_lower:
+            return self._invoices.copy()
 
-        # Reviews table
-        if "reviews" in query_lower and "from" in query_lower:
+        # Handle categorization queries
+        if "cat_" in query_lower:
+            return self._categorizations.copy()
+
+        # Handle reviews queries
+        if "cat_reviews" in query_lower or "reviews" in query_lower:
             return self._reviews.copy()
 
-        # Categorization_sync queries
-        if "categorization" in query_lower and "from" in query_lower:
-            return self._categorization.copy()
+        # Handle category queries
+        if "categories" in query_lower and "cat_" not in query_lower:
+            # For distinct category queries
+            if "distinct" in query_lower:
+                if "category_level_2" in query_lower:
+                    return pd.DataFrame(
+                        {
+                            "category_level_2": self._categories[
+                                "category_level_2"
+                            ].unique()
+                        }
+                    )
+                elif "category_level_3" in query_lower:
+                    return pd.DataFrame(
+                        {
+                            "category_level_3": self._categories[
+                                "category_level_3"
+                            ].unique()
+                        }
+                    )
+            return self._categories.copy()
 
-        # Invoices queries (invoices_sync)
-        if "from" in query_lower and (
-            "invoices" in query_lower or "invoice" in query_lower
-        ):
-            df = self._invoices.copy()
-
-            # Handle JOIN with categorization
-            if "join" in query_lower and "categorization" in query_lower:
-                # Merge invoices with categorization
-                df = df.merge(
-                    self._categorization[
-                        ["invoice_id", "category", "confidence", "run_id"]
-                    ],
-                    on="invoice_id",
-                    how="left",
-                    suffixes=("", "_cat"),
-                )
-                # Rename for expected output
-                if "category_cat" in df.columns:
-                    df["llm_category"] = df["category_cat"]
-                    df = df.drop(columns=["category_cat"])
-
-                # Handle confidence filter for flagged
-                if "confidence <" in query_lower:
-                    threshold = 0.7  # Default
-                    import re
-
-                    match = re.search(r"confidence\s*<\s*([\d.]+)", query_lower)
-                    if match:
-                        threshold = float(match.group(1))
-                    df = df[(df["confidence"] < threshold) | (df["category"].isna())]
-                    df = df.sort_values("confidence")
-
-            else:
-                # Search
-                if parameters and "search_pattern" in parameters:
-                    pattern = parameters["search_pattern"].replace("%", "")
-                    if pattern:
-                        mask = (
-                            df["invoice_number"].str.contains(
-                                pattern, case=False, na=False
-                            )
-                            | df["vendor_name"].str.contains(
-                                pattern, case=False, na=False
-                            )
-                            | df["description"].str.contains(
-                                pattern, case=False, na=False
-                            )
-                        )
-                        df = df[mask]
-
-                # Filter by IDs
-                if "invoice_id in" in query_lower:
-                    import re
-
-                    match = re.search(r"invoice_id in \(([^)]+)\)", query_lower)
-                    if match:
-                        ids = re.findall(r"'([^']+)'", query)
-                        if ids:
-                            df = df[df["invoice_id"].isin(ids)]
-
-                # Flagged invoices (old style without join)
-                if (
-                    "confidence_score <" in query_lower
-                    or "category is null" in query_lower
-                ):
-                    df = df[(df["confidence_score"] < 0.7) | (df["category"].isna())]
-                    df = df.sort_values("confidence_score")
-
-            # Limit
-            if "limit" in query_lower:
-                try:
-                    import re
-
-                    match = re.search(r"limit\s+(\d+)", query_lower)
-                    if match:
-                        limit = int(match.group(1))
-                        df = df.head(limit)
-                except (ValueError, IndexError):
-                    pass
-
-            return df
-
+        # Default: return empty DataFrame
+        logger.warning(f"MockBackend: unhandled query pattern: {query[:100]}")
         return pd.DataFrame()
 
     def execute_write(
         self, query: str, parameters: Optional[Dict[str, Any]] = None
     ) -> None:
-        query_lower = query.lower().strip()
+        """Mock write operation - appends to reviews DataFrame."""
+        logger.info(f"MockBackend execute_write: {query[:100]}...")
 
-        # Insert into reviews
-        if "insert" in query_lower and "reviews" in query_lower:
-            if parameters:
-                new_row = pd.DataFrame(
-                    [
-                        {
-                            "label_id": str(uuid.uuid4()),
-                            "invoice_id": parameters.get("invoice_id"),
-                            "schema_id": parameters.get("schema_id"),
-                            "prompt_id": parameters.get("prompt_id"),
-                            "category": parameters.get("category"),
-                            "label_version_date": parameters.get("label_version_date"),
-                            "labeler_id": parameters.get("labeler_id"),
-                            "source": parameters.get("source", "human"),
-                            "is_current": True,
-                            "created_at": parameters.get("created_at"),
-                        }
-                    ]
-                )
-                self._reviews = pd.concat([self._reviews, new_row], ignore_index=True)
+        # If this is a review INSERT, append to _reviews
+        if "INSERT INTO" in query and parameters:
+            new_row = pd.DataFrame([parameters])
+            self._reviews = pd.concat([self._reviews, new_row], ignore_index=True)
+            logger.info(f"Added review to _reviews, now has {len(self._reviews)} rows")
 
     def is_connected(self) -> bool:
         return True
@@ -304,11 +242,11 @@ class LakebaseBackend(DatabaseBackend):
 
 def create_backend(config: Config) -> DatabaseBackend:
     """Factory function to create the appropriate backend."""
-    if config.is_test_mode:
+    if config.app_mode == "test":
         logger.info("Creating MockBackend for test mode")
-        return MockBackend()
+        return MockBackend(config)
 
-    if config.is_prod_mode:
+    if config.app_mode == "prod":
         if not config.lakebase_instance:
             raise ValueError("lakebase_instance required for prod mode")
         logger.info(f"Creating LakebaseBackend (instance: {config.lakebase_instance})")
@@ -317,7 +255,7 @@ def create_backend(config: Config) -> DatabaseBackend:
             dbname=config.lakebase_dbname,
         )
 
-    raise ValueError(f"Unknown mode: {config.mode}")
+    raise ValueError(f"Unknown app_mode: {config.app_mode}")
 
 
 # Global backend instance

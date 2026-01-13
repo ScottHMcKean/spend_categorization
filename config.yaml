@@ -9,7 +9,7 @@ generate:
   company:
     name: Borealis Wind Systems
     industry: Wind turbine manufacturing
-    categories_file: categories.csv
+    categories_file: assets/categories.csv
     cost_centres:
       - CC-100-Production
       - CC-200-Maintenance
@@ -82,9 +82,9 @@ generate:
   # Delta tables created by 0_generate.ipynb
   tables:
     invoices_raw: invoices_raw # Python-generated base data
-    invoices: invoices # LLM-enhanced with descriptions
-    categories: categories # Category hierarchy from config
-
+    invoices: invoices # LLM-enhanced invoices with descriptions, supplier, country
+    categories: categories # Category hierarchy from CSV
+    categories_str: categories_str # Versioned category strings
   data:
     catalog: shm
     schema: spend
@@ -125,16 +125,21 @@ generate:
       Invoice Information:
 
 # =============================================================================
-# CATEGORIZE - Classification models (2_bootstrap, 3_optimize, 4_catboost, 5_vectorsearch)
+# CATEGORIZE - Categorization models (2_bootstrap, 3_optimize, 4_catboost, 5_vectorsearch)
 # Uses catalog/schema from generate section
+# Data flow: invoices -> cat_bootstrap (LLM) -> cat_reviews (human) -> cat_catboost/cat_vectorsearch (trained models) -> cat_reviews (feedback loop)
 # =============================================================================
 categorize:
   # Delta tables for categorization
   tables:
-    prompts: prompts # Prompt versions used for classification
-    cat_bootstrap: cat_bootstrap # LLM bootstrap classifications
-    cat_catboost: cat_catboost # CatBoost model predictions
-    cat_vectorsearch: cat_vectorsearch # Vector search predictions
+    prompts: prompts # Prompt versions used for categorization
+    cat_bootstrap: cat_bootstrap # LLM bootstrap categorizations (source: bootstrap)
+    cat_catboost: cat_catboost # CatBoost model predictions (source: catboost, trained on reviews)
+    cat_vectorsearch: cat_vectorsearch # Vector search predictions (source: vectorsearch, trained on reviews)
+    cat_reviews: cat_reviews # Append-only human review table (training data for catboost/vectorsearch)
+
+  # Which categorization source to use in app
+  categorization_source: bootstrap # bootstrap | catboost | vectorsearch
 
 app:
   mode: test # test (mock data) or prod (Lakebase)
@@ -143,11 +148,9 @@ app:
   lakebase_instance: shm
   lakebase_dbname: databricks_postgres
 
-  # Lakebase tables
+  # App tables
   tables:
-    invoices_sync: invoices_sync # synced from invoices
-    categorization_sync: categorization_sync # synced from cat_bootstrap
-    reviews: reviews # app writes, ingested to Delta
+    reviews: reviews # Human review submissions
 
   ui:
     title: Spend Categorization

@@ -1,0 +1,6 @@
+review_id,order_id,source,reviewer,review_date,original_level_1,original_level_2,original_level_3,reviewed_level_1,reviewed_level_2,reviewed_level_3,review_status,comments,created_at
+REV-001,ORD-001,bootstrap,alice,2026-01-16,Direct,Bearings & Seals,Spherical roller bearing,Direct,Bearings & Seals,Spherical roller bearing,approved,Categorization is correct,2026-01-16 09:15:30
+REV-002,ORD-002,bootstrap,bob,2026-01-16,Indirect,IT & Software,SaaS subscription,Indirect,IT & Software,Cloud storage,corrected,More specific subcategory,2026-01-16 10:22:15
+REV-003,ORD-003,catboost,alice,2026-01-16,Indirect,Facilities & Utilities,Building materials,Indirect,Facilities & Utilities,Building materials,approved,Accurate categorization,2026-01-16 11:45:00
+REV-004,ORD-004,vectorsearch,charlie,2026-01-16,Indirect,Professional Services,Business consulting,Indirect,Professional Services,Business consulting,approved,Looks good,2026-01-16 13:10:22
+REV-005,ORD-005,bootstrap,bob,2026-01-16,Indirect,Office Supplies,Office consumables,Indirect,Office Supplies,Paper products,corrected,Better specificity needed,2026-01-16 14:55:18

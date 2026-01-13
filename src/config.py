@@ -45,12 +45,17 @@ class Config(BaseModel):
     invoices_raw: str
     invoices: str
     categories_table: str
-
+    categories_str: str = "categories_str"
+    
     # Tables - Categorize
     prompts: str = "prompts"
     cat_bootstrap: str = "cat_bootstrap"
     cat_catboost: str = "cat_catboost"
     cat_vectorsearch: str = "cat_vectorsearch"
+    cat_reviews: str = "cat_reviews"
+    
+    # Active categorization source
+    categorization_source: Literal["bootstrap", "catboost", "vectorsearch"] = "bootstrap"
 
     # LLM
     small_llm_endpoint: str
@@ -73,8 +78,6 @@ class Config(BaseModel):
     lakebase_dbname: str = "databricks_postgres"
     
     # App tables
-    invoices_sync: str = "invoices_sync"
-    categorization_sync: str = "categorization_sync"
     reviews: str = "reviews"
     
     # App UI
@@ -102,6 +105,10 @@ class Config(BaseModel):
     @property
     def full_categories_table_path(self) -> str:
         return f"{self.catalog}.{self.schema_name}.{self.categories_table}"
+    
+    @property
+    def full_categories_str_table_path(self) -> str:
+        return f"{self.catalog}.{self.schema_name}.{self.categories_str}"
 
     @property
     def full_prompts_table_path(self) -> str:
@@ -118,16 +125,22 @@ class Config(BaseModel):
     @property
     def full_cat_vectorsearch_table_path(self) -> str:
         return f"{self.catalog}.{self.schema_name}.{self.cat_vectorsearch}"
-
-    # --- App Properties ---
-
+    
     @property
-    def is_test_mode(self) -> bool:
-        return self.app_mode == "test"
-
+    def full_cat_reviews_table_path(self) -> str:
+        return f"{self.catalog}.{self.schema_name}.{self.cat_reviews}"
+    
     @property
-    def is_prod_mode(self) -> bool:
-        return self.app_mode == "prod"
+    def active_categorization_table_path(self) -> str:
+        """Get the active categorization table based on categorization_source."""
+        if self.categorization_source == "bootstrap":
+            return self.full_cat_bootstrap_table_path
+        elif self.categorization_source == "catboost":
+            return self.full_cat_catboost_table_path
+        elif self.categorization_source == "vectorsearch":
+            return self.full_cat_vectorsearch_table_path
+        else:
+            raise ValueError(f"Invalid categorization_source: {self.categorization_source}")
 
     # --- Category Methods ---
 
@@ -197,12 +210,15 @@ class Config(BaseModel):
             invoices_raw=gen_tables["invoices_raw"],
             invoices=gen_tables["invoices"],
             categories_table=gen_tables["categories"],
+            categories_str=gen_tables.get("categories_str", "categories_str"),
             
             # Categorize tables
             prompts=cat_tables.get("prompts", "prompts"),
             cat_bootstrap=cat_tables.get("cat_bootstrap", "cat_bootstrap"),
             cat_catboost=cat_tables.get("cat_catboost", "cat_catboost"),
             cat_vectorsearch=cat_tables.get("cat_vectorsearch", "cat_vectorsearch"),
+            cat_reviews=cat_tables.get("cat_reviews", "cat_reviews"),
+            categorization_source=data.get("categorize", {}).get("categorization_source", "bootstrap"),
             
             # LLM
             small_llm_endpoint=gen_data["small_llm_endpoint"],
@@ -223,8 +239,6 @@ class Config(BaseModel):
             default_user=app.get("default_user", "user"),
             lakebase_instance=app.get("lakebase_instance", ""),
             lakebase_dbname=app.get("lakebase_dbname", "databricks_postgres"),
-            invoices_sync=app.get("tables", {}).get("invoices_sync", "invoices_sync"),
-            categorization_sync=app.get("tables", {}).get("categorization_sync", "categorization_sync"),
             reviews=app.get("tables", {}).get("reviews", "reviews"),
             ui_title=app.get("ui", {}).get("title", "Spend Categorization"),
             ui_icon=app.get("ui", {}).get("icon", "databricks"),

@@ -12,7 +12,7 @@ def test_load_config():
     assert isinstance(config, Config)
     assert config.company_name == "Borealis Wind Systems"
     assert config.industry == "Wind turbine manufacturing"
-    assert config.categories_file == "categories.csv"
+    assert config.categories_file == "assets/categories.csv"
 
 
 def test_config_has_categories_from_csv():
