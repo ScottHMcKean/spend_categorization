@@ -46,7 +46,6 @@ generate:
         region: South America
         country: Brazil
 
-  # Delta tables created by 0_generate.ipynb
   tables:
     invoices_raw: invoices_raw # Python-generated base data
     invoices: invoices # LLM-enhanced invoices with descriptions, supplier, country
