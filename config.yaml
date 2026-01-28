@@ -45,12 +45,11 @@ generate:
         id: PLANT-BR
         region: South America
         country: Brazil
-
   tables:
-    invoices_raw: invoices_raw # Python-generated base data
-    invoices: invoices # LLM-enhanced invoices with descriptions, supplier, country
-    categories: categories # Category hierarchy from CSV
-    categories_str: categories_str # Versioned category strings
+    invoices_raw: invoices_raw
+    invoices: invoices
+    categories: categories
+    categories_str: categories_str
   data:
     catalog: shm
     schema: spend
@@ -98,14 +97,11 @@ generate:
 categorize:
   # Delta tables for categorization
   tables:
-    prompts: prompts # Prompt versions used for categorization
-    cat_bootstrap: cat_bootstrap # LLM bootstrap categorizations (source: bootstrap)
-    cat_catboost: cat_catboost # CatBoost model predictions (source: catboost, trained on reviews)
-    cat_vectorsearch: cat_vectorsearch # Vector search predictions (source: vectorsearch, trained on reviews)
-    cat_reviews: cat_reviews # Append-only human review table (training data for catboost/vectorsearch)
-
-  # Which categorization source to use in app
-  categorization_source: bootstrap # bootstrap | catboost | vectorsearch
+    prompts: prompts
+    cat_bootstrap: cat_bootstrap
+    cat_catboost: cat_catboost
+    cat_vectorsearch: cat_vectorsearch 
+    cat_reviews: cat_reviews
 
 app:
   mode: test # test (mock data) or prod (Lakebase)
@@ -113,6 +109,8 @@ app:
   default_user: user
   lakebase_instance: shm
   lakebase_dbname: databricks_postgres
+  categorization_source: bootstrap # bootstrap | catboost | vectorsearch
+
 
   # App tables
   tables:
