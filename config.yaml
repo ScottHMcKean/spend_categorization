@@ -55,7 +55,7 @@ generate:
     schema: spend
     small_llm_endpoint: databricks-gpt-oss-20b
     large_llm_endpoint: databricks-claude-sonnet-4-5
-    rows: 10000
+    rows: 5000
     start: 2024-01-01
     end: 2025-12-31
     distribution:

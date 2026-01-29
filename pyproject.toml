@@ -17,6 +17,7 @@ dependencies = [
     "aiofiles",
     "pyyaml>=6.0.0",
     "streamlit>=1.28.0",
+    "openai"
 ]
 
 [project.optional-dependencies]
