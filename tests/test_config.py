@@ -8,7 +8,7 @@ def test_config_defaults():
     """Test Config default values."""
     # Can't create without required fields, so test loading from YAML
     config = load_config()
-    assert config.app_mode in ["test", "prod"]
+    assert config.app_mode in ["test", "prod", "lakebase"]
     assert config.page_size == 50
 
 
@@ -28,7 +28,7 @@ def test_load_config():
     assert config.cat_bootstrap
     
     # Test app fields
-    assert config.app_mode in ["test", "prod"]
+    assert config.app_mode in ["test", "prod", "lakebase"]
     assert config.reviews
 
 

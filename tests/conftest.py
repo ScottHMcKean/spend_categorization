@@ -9,6 +9,7 @@ from src.config import Config
 def sample_config():
     """Provide a sample Config for testing."""
     config = Config.from_yaml()
+    config.app_mode = "test"
     return config
 
 
@@ -24,7 +25,7 @@ def sample_invoice_data():
             "invoice_date": ["2024-01-01", "2024-01-02", "2024-01-03"],
             "amount": [100.00, 200.00, 300.00],
             "category": ["Office Supplies", "Software", "Hardware"],
-            "confidence_score": [0.95, 0.65, 0.45],
+            "confidence_score": [4.8, 3.2, 2.3],
             "description": ["Pens and paper", "Software license", "Computer equipment"],
         }
     )

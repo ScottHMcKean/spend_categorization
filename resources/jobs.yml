@@ -1,0 +1,108 @@
+resources:
+  jobs:
+    # ---------------------------------------------------------------
+    # Full pipeline: generate data, classify, and quantify accuracy
+    # ---------------------------------------------------------------
+    spend_categorization_pipeline:
+      name: "[${bundle.target}] Spend Categorization Pipeline"
+
+      tasks:
+        - task_key: generate_data
+          notebook_task:
+            notebook_path: ../0_generate.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: eda_and_split
+          depends_on:
+            - task_key: generate_data
+          notebook_task:
+            notebook_path: ../1_eda.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: bootstrap_classify
+          depends_on:
+            - task_key: eda_and_split
+          notebook_task:
+            notebook_path: ../2_bootstrap.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: optimize_prompts
+          depends_on:
+            - task_key: bootstrap_classify
+          notebook_task:
+            notebook_path: ../3_optimize.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: catboost_classify
+          depends_on:
+            - task_key: eda_and_split
+          notebook_task:
+            notebook_path: ../4_catboost.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: vectorsearch_classify
+          depends_on:
+            - task_key: eda_and_split
+          notebook_task:
+            notebook_path: ../5_vectorsearch.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: sync_to_lakebase
+          depends_on:
+            - task_key: bootstrap_classify
+            - task_key: catboost_classify
+            - task_key: vectorsearch_classify
+          notebook_task:
+            notebook_path: ../6_sync_to_lakebase.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+
+    # ---------------------------------------------------------------
+    # Accuracy quantification only (re-run classification + metrics)
+    # Assumes invoices and categories already exist
+    # ---------------------------------------------------------------
+    quantify_accuracy:
+      name: "[${bundle.target}] Quantify Classification Accuracy"
+
+      tasks:
+        - task_key: bootstrap_classify
+          notebook_task:
+            notebook_path: ../2_bootstrap.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: optimize_prompts
+          depends_on:
+            - task_key: bootstrap_classify
+          notebook_task:
+            notebook_path: ../3_optimize.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: catboost_classify
+          notebook_task:
+            notebook_path: ../4_catboost.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: vectorsearch_classify
+          notebook_task:
+            notebook_path: ../5_vectorsearch.ipynb
+            source: WORKSPACE
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"

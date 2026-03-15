@@ -25,7 +25,9 @@ from src.app.reviews import (
 @pytest.fixture
 def test_config():
     """Create a test Config."""
-    return Config.from_yaml()
+    config = Config.from_yaml()
+    config.app_mode = "test"
+    return config
 
 
 @pytest.fixture
@@ -58,6 +60,7 @@ class TestCreateBackend:
     def test_create_mock_backend_for_test_mode(self):
         reset_backend()
         config = Config.from_yaml()
+        config.app_mode = "test"
         backend = create_backend(config)
         assert isinstance(backend, MockBackend)
 

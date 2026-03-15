@@ -1,12 +1,14 @@
 """Database backend abstraction for test and prod modes.
 
-- test: MockBackend with in-memory data
-- prod: LakebaseBackend with PostgreSQL on Databricks
+- test: MockBackend with in-memory CSV data
+- prod: ServerlessBackend querying Delta tables via Databricks Connect serverless
+- lakebase: LakebaseBackend with PostgreSQL on Databricks
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -151,11 +153,27 @@ class MockBackend(DatabaseBackend):
 
 
 class LakebaseBackend(DatabaseBackend):
-    """PostgreSQL backend using Databricks Lakebase."""
+    """PostgreSQL backend using Databricks Lakebase.
 
-    def __init__(self, instance: str, dbname: str = "databricks_postgres"):
+    Queries are written using Delta 3-part names (catalog.schema.table).
+    This backend rewrites them to PG format at execution time:
+      - synced tables: "schema"."table_synced"
+      - native tables (cat_reviews): "schema"."table"
+    """
+
+    NATIVE_TABLES = {"cat_reviews"}
+
+    def __init__(
+        self,
+        instance: str,
+        dbname: str = "databricks_postgres",
+        catalog: str = "",
+        schema_name: str = "",
+    ):
         self.instance = instance
         self.dbname = dbname
+        self.catalog = catalog
+        self.schema_name = schema_name
         self._client = None
 
     @property
@@ -165,6 +183,23 @@ class LakebaseBackend(DatabaseBackend):
 
             self._client = WorkspaceClient()
         return self._client
+
+    def _rewrite_query(self, query: str) -> str:
+        """Rewrite Delta 3-part table refs to Lakebase PG format."""
+        if not self.catalog or not self.schema_name:
+            return query
+        import re
+
+        prefix = f"{self.catalog}.{self.schema_name}."
+        prefix_re = re.escape(prefix)
+
+        def _replace(m: re.Match) -> str:
+            table = m.group(1)
+            if table in self.NATIVE_TABLES:
+                return f'"{self.schema_name}"."{table}"'
+            return f'"{self.schema_name}"."{table}_synced"'
+
+        return re.sub(prefix_re + r"(\w+)", _replace, query)
 
     @contextmanager
     def get_connection(self):
@@ -206,6 +241,7 @@ class LakebaseBackend(DatabaseBackend):
     def execute_query(
         self, query: str, parameters: Optional[Dict[str, Any]] = None
     ) -> pd.DataFrame:
+        query = self._rewrite_query(query)
         if parameters:
             for key in parameters:
                 query = query.replace(f":{key}", f"%({key})s")
@@ -220,6 +256,7 @@ class LakebaseBackend(DatabaseBackend):
     def execute_write(
         self, query: str, parameters: Optional[Dict[str, Any]] = None
     ) -> None:
+        query = self._rewrite_query(query)
         if parameters:
             for key in parameters:
                 query = query.replace(f":{key}", f"%({key})s")
@@ -240,6 +277,75 @@ class LakebaseBackend(DatabaseBackend):
             return False
 
 
+class ServerlessBackend(DatabaseBackend):
+    """Backend querying Delta tables via WorkspaceClient statement execution.
+
+    Uses the Databricks SDK's statement_execution API with a serverless SQL
+    warehouse. Works in Databricks Apps, local dev, and anywhere the SDK can
+    authenticate.
+    """
+
+    def __init__(self, warehouse_id: str = ""):
+        self._client = None
+        self._warehouse_id = warehouse_id
+
+    @property
+    def client(self):
+        if self._client is None:
+            from databricks.sdk import WorkspaceClient
+            self._client = WorkspaceClient()
+        return self._client
+
+    @property
+    def warehouse_id(self) -> str:
+        return self._warehouse_id or os.getenv("DATABRICKS_WAREHOUSE_ID", "")
+
+    def _substitute_params(self, query: str, parameters: Optional[Dict[str, Any]]) -> str:
+        if parameters:
+            for key, val in parameters.items():
+                replacement = f"'{val}'" if isinstance(val, str) else str(val)
+                query = query.replace(f":{key}", replacement)
+        return query
+
+    def execute_query(
+        self, query: str, parameters: Optional[Dict[str, Any]] = None
+    ) -> pd.DataFrame:
+        query = self._substitute_params(query, parameters)
+        resp = self.client.statement_execution.execute_statement(
+            warehouse_id=self.warehouse_id,
+            statement=query,
+            wait_timeout="50s",
+        )
+        if resp.status and resp.status.state and resp.status.state.value != "SUCCEEDED":
+            error_msg = resp.status.error.message if resp.status.error else str(resp.status)
+            raise RuntimeError(f"Statement failed: {error_msg}")
+        if not resp.result or not resp.result.data_array:
+            return pd.DataFrame()
+        columns = [c.name for c in resp.manifest.schema.columns]
+        return pd.DataFrame(resp.result.data_array, columns=columns)
+
+    def execute_write(
+        self, query: str, parameters: Optional[Dict[str, Any]] = None
+    ) -> None:
+        query = self._substitute_params(query, parameters)
+        resp = self.client.statement_execution.execute_statement(
+            warehouse_id=self.warehouse_id,
+            statement=query,
+            wait_timeout="50s",
+        )
+        if resp.status and resp.status.state and resp.status.state.value != "SUCCEEDED":
+            error_msg = resp.status.error.message if resp.status.error else str(resp.status)
+            raise RuntimeError(f"Statement failed: {error_msg}")
+
+    def is_connected(self) -> bool:
+        try:
+            self.execute_query("SELECT 1")
+            return True
+        except Exception as e:
+            logger.error(f"ServerlessBackend connection check failed: {e}")
+            return False
+
+
 def create_backend(config: Config) -> DatabaseBackend:
     """Factory function to create the appropriate backend."""
     if config.app_mode == "test":
@@ -247,12 +353,20 @@ def create_backend(config: Config) -> DatabaseBackend:
         return MockBackend(config)
 
     if config.app_mode == "prod":
+        logger.info("Creating ServerlessBackend for prod mode (statement execution)")
+        return ServerlessBackend(
+            warehouse_id=config.warehouse_id,
+        )
+
+    if config.app_mode == "lakebase":
         if not config.lakebase_instance:
-            raise ValueError("lakebase_instance required for prod mode")
+            raise ValueError("lakebase_instance required for lakebase mode")
         logger.info(f"Creating LakebaseBackend (instance: {config.lakebase_instance})")
         return LakebaseBackend(
             instance=config.lakebase_instance,
             dbname=config.lakebase_dbname,
+            catalog=config.catalog,
+            schema_name=config.schema_name,
         )
 
     raise ValueError(f"Unknown app_mode: {config.app_mode}")

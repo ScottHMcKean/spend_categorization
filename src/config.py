@@ -71,9 +71,10 @@ class Config(BaseModel):
     llm_columns: List[str]
 
     # App settings
-    app_mode: Literal["test", "prod"] = "test"
+    app_mode: Literal["test", "prod", "lakebase"] = "test"
     page_size: int = 50
     default_user: str = "user"
+    warehouse_id: str = ""
     lakebase_instance: str = ""
     lakebase_dbname: str = "databricks_postgres"
     
@@ -89,10 +90,12 @@ class Config(BaseModel):
     max_results: int = 500
     
     # App flagging
-    low_confidence_threshold: float = 0.7
-    critical_confidence_threshold: float = 0.5
+    low_confidence_threshold: float = 3.5
+    critical_confidence_threshold: float = 2.5
 
     # --- Table Path Properties ---
+    # Always return Delta 3-part names (catalog.schema.table).
+    # LakebaseBackend rewrites these to PG format at query time.
 
     @property
     def full_invoices_raw_table_path(self) -> str:
@@ -105,7 +108,7 @@ class Config(BaseModel):
     @property
     def full_categories_table_path(self) -> str:
         return f"{self.catalog}.{self.schema_name}.{self.categories_table}"
-    
+
     @property
     def full_categories_str_table_path(self) -> str:
         return f"{self.catalog}.{self.schema_name}.{self.categories_str}"
@@ -119,17 +122,25 @@ class Config(BaseModel):
         return f"{self.catalog}.{self.schema_name}.{self.cat_bootstrap}"
 
     @property
+    def cat_catboost_table(self) -> str:
+        return self.cat_catboost
+
+    @property
     def full_cat_catboost_table_path(self) -> str:
         return f"{self.catalog}.{self.schema_name}.{self.cat_catboost}"
 
     @property
+    def cat_vectorsearch_table(self) -> str:
+        return self.cat_vectorsearch
+
+    @property
     def full_cat_vectorsearch_table_path(self) -> str:
         return f"{self.catalog}.{self.schema_name}.{self.cat_vectorsearch}"
-    
+
     @property
     def full_cat_reviews_table_path(self) -> str:
         return f"{self.catalog}.{self.schema_name}.{self.cat_reviews}"
-    
+
     @property
     def active_categorization_table_path(self) -> str:
         """Get the active categorization table based on categorization_source."""
@@ -222,7 +233,7 @@ class Config(BaseModel):
             cat_catboost=cat_tables.get("cat_catboost", "cat_catboost"),
             cat_vectorsearch=cat_tables.get("cat_vectorsearch", "cat_vectorsearch"),
             cat_reviews=cat_tables.get("cat_reviews", "cat_reviews"),
-            categorization_source=data.get("categorize", {}).get("categorization_source", "bootstrap"),
+            categorization_source=app.get("categorization_source", "bootstrap"),
             
             # LLM
             small_llm_endpoint=gen_data["small_llm_endpoint"],
@@ -241,6 +252,7 @@ class Config(BaseModel):
             app_mode=app.get("mode", "test"),
             page_size=app.get("page_size", 50),
             default_user=app.get("default_user", "user"),
+            warehouse_id=app.get("warehouse_id", ""),
             lakebase_instance=app.get("lakebase_instance", ""),
             lakebase_dbname=app.get("lakebase_dbname", "databricks_postgres"),
             reviews=app.get("tables", {}).get("reviews", "reviews"),
@@ -248,8 +260,8 @@ class Config(BaseModel):
             ui_icon=app.get("ui", {}).get("icon", "databricks"),
             search_fields=app.get("search", {}).get("default_fields", ["invoice_number", "vendor_name", "description"]),
             max_results=app.get("search", {}).get("max_results", 500),
-            low_confidence_threshold=app.get("flagging", {}).get("low_confidence_threshold", 0.7),
-            critical_confidence_threshold=app.get("flagging", {}).get("critical_confidence_threshold", 0.5),
+            low_confidence_threshold=app.get("flagging", {}).get("low_confidence_threshold", 3.5),
+            critical_confidence_threshold=app.get("flagging", {}).get("critical_confidence_threshold", 2.5),
         )
 
 

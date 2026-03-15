@@ -106,24 +106,44 @@ def initialize_reviews_table(
         from .database import get_backend
         backend = get_backend()
 
-    query = f"""
-        CREATE TABLE IF NOT EXISTS {config.full_cat_reviews_table_path} (
-            review_id STRING,
-            order_id STRING,
-            source STRING,
-            reviewer STRING,
-            review_date DATE,
-            original_level_1 STRING,
-            original_level_2 STRING,
-            original_level_3 STRING,
-            reviewed_level_1 STRING,
-            reviewed_level_2 STRING,
-            reviewed_level_3 STRING,
-            review_status STRING,
-            comments STRING,
-            created_at TIMESTAMP
-        )
-    """
-    
+    if config.app_mode == "lakebase":
+        query = f"""
+            CREATE TABLE IF NOT EXISTS {config.full_cat_reviews_table_path} (
+                review_id TEXT,
+                order_id TEXT,
+                source TEXT,
+                reviewer TEXT,
+                review_date DATE,
+                original_level_1 TEXT,
+                original_level_2 TEXT,
+                original_level_3 TEXT,
+                reviewed_level_1 TEXT,
+                reviewed_level_2 TEXT,
+                reviewed_level_3 TEXT,
+                review_status TEXT,
+                comments TEXT,
+                created_at TIMESTAMPTZ
+            )
+        """
+    else:
+        query = f"""
+            CREATE TABLE IF NOT EXISTS {config.full_cat_reviews_table_path} (
+                review_id STRING,
+                order_id STRING,
+                source STRING,
+                reviewer STRING,
+                review_date DATE,
+                original_level_1 STRING,
+                original_level_2 STRING,
+                original_level_3 STRING,
+                reviewed_level_1 STRING,
+                reviewed_level_2 STRING,
+                reviewed_level_3 STRING,
+                review_status STRING,
+                comments STRING,
+                created_at TIMESTAMP
+            )
+        """
+
     backend.execute_write(query)
     logger.info("Initialized cat_reviews table")

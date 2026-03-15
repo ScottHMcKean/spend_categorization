@@ -68,7 +68,7 @@ def search_invoices(
 
 def get_flagged_invoices(
     config: Config,
-    threshold: float = 0.7,
+    threshold: float = 3.5,
     limit: int = 50,
     backend: Optional[DatabaseBackend] = None,
 ) -> pd.DataFrame:
@@ -81,7 +81,7 @@ def get_flagged_invoices(
     cat_table = config.active_categorization_table_path
     
     query = f"""
-        SELECT i.*, c.pred_level_1, c.pred_level_2, c.pred_level_3, c.confidence
+        SELECT i.*, c.pred_level_1, c.pred_level_2, c.confidence
         FROM {config.full_invoices_table_path} i
         LEFT JOIN {cat_table} c ON i.order_id = c.order_id
         WHERE c.confidence < {threshold} OR c.confidence IS NULL
@@ -94,9 +94,10 @@ def get_flagged_invoices(
         invoices = backend._invoices.copy()
         categorizations = backend._categorizations.copy()
         
-        # Merge invoices with categorizations
+        pred_cols = [c for c in ["order_id", "pred_level_1", "pred_level_2", "pred_level_3", "confidence"]
+                     if c in categorizations.columns]
         result = invoices.merge(
-            categorizations[['order_id', 'pred_level_1', 'pred_level_2', 'pred_level_3', 'confidence']],
+            categorizations[pred_cols],
             on='order_id',
             how='left'
         )
@@ -168,7 +169,7 @@ def get_invoice_with_categorization(
     cat_table = config.active_categorization_table_path
     
     query = f"""
-        SELECT i.*, c.pred_level_1, c.pred_level_2, c.pred_level_3, c.confidence, c.source
+        SELECT i.*, c.pred_level_1, c.pred_level_2, c.confidence, c.source
         FROM {config.full_invoices_table_path} i
         LEFT JOIN {cat_table} c ON i.order_id = c.order_id
         WHERE i.order_id = :invoice_id

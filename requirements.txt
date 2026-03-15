@@ -1,0 +1,8 @@
+databricks-sdk>=0.50.0
+mlflow>=3.4
+pandas>=2.0.0
+pyyaml>=6.0.0
+openai
+streamlit>=1.28.0
+plotly>=6.6.0
+psycopg2-binary>=2.9.0

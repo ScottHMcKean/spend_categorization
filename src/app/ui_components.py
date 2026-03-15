@@ -99,13 +99,9 @@ def render_invoice_table(
                     else:
                         st.write(f"**Category:** N/A")
                     
-                    # Display confidence if available
                     if "confidence" in row and pd.notna(row["confidence"]):
-                        conf = row["confidence"]
-                        # Normalize confidence (could be 0-1 or 0-10)
-                        if conf > 1:
-                            conf = conf / 10.0
-                        st.write(f"**Confidence:** {conf*100:.1f}%")
+                        conf = float(row["confidence"])
+                        st.write(f"**Confidence:** {conf:.1f} / 5")
                     else:
                         st.write(f"**Confidence:** N/A")
                     
@@ -222,11 +218,13 @@ def render_review_pane(
         st.write(f"**Supplier:** {row.get('supplier', 'N/A')}")
 
     with col2:
-        st.write(f"**Amount:** ${row.get('amount', 0):,.2f}")
-        st.write(f"**Date:** {row.get('invoice_date', 'N/A')}")
+        amt = row.get("total", row.get("amount", 0))
+        st.write(f"**Amount:** ${amt:,.2f}" if amt else "**Amount:** N/A")
+        st.write(f"**Date:** {row.get('date', 'N/A')}")
 
     with col3:
-        st.write(f"**Confidence:** {row.get('confidence_score', 0):.1%}")
+        conf = row.get("confidence")
+        st.write(f"**Confidence:** {float(conf):.1f} / 5" if pd.notna(conf) else "**Confidence:** N/A")
         if st.button("Clear Queue", use_container_width=True, key="clear_mini"):
             on_clear_review()
             st.rerun()
@@ -240,8 +238,7 @@ def render_review_pane(
 
     col1, col2 = st.columns(2)
 
-    current_category = row.get("category")
-    # Find the index of current category, default to 0 if not found
+    current_category = row.get("pred_level_1", row.get("category_level_2"))
     default_idx = 0
     if current_category and current_category in available_categories:
         default_idx = available_categories.index(current_category)
@@ -296,15 +293,14 @@ def render_review_pane(
 
     with col3:
         if st.button("Submit", type="primary", use_container_width=True):
-            # Combine categories
-            combined_category = primary_category
-            if secondary_category != "None":
-                combined_category = f"{primary_category} | {secondary_category}"
+            reviewed_l2 = primary_category
 
             correction = {
                 "order_id": order_id,
-                "transaction_ids": [row.get("transaction_id", order_id)],
-                "corrected_category": combined_category,
+                "corrected_category": reviewed_l2,
+                "original_level_1": row.get("pred_level_1", row.get("category_level_1", "")),
+                "original_level_2": row.get("pred_level_2", row.get("category_level_2", "")),
+                "original_level_3": row.get("pred_level_3", row.get("category_level_3", "")),
                 "comment": comment if comment else None,
             }
             on_submit_corrections([correction])

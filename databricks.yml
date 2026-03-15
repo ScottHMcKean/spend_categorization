@@ -1,0 +1,32 @@
+bundle:
+  name: spend-categorization
+
+workspace:
+  root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+
+  prod:
+    mode: production
+    run_as:
+      service_principal_name: ${var.service_principal_name}
+    variables:
+      service_principal_name:
+        description: Service principal for production runs
+
+variables:
+  catalog:
+    description: Unity Catalog name
+    default: shm
+  schema:
+    description: Schema (database) name
+    default: spend
+  llm_endpoint:
+    description: LLM endpoint for generation and classification
+    default: databricks-claude-sonnet-4-5
