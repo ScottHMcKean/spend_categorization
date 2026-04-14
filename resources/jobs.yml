@@ -1,15 +1,30 @@
 resources:
   jobs:
-    # ---------------------------------------------------------------
-    # Full pipeline: generate data, classify, and quantify accuracy
-    # ---------------------------------------------------------------
     spend_categorization_pipeline:
       name: "[${bundle.target}] Spend Categorization Pipeline"
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: llm_endpoint
+          default: ${var.llm_endpoint}
+        - name: batch_size
+          default: "1000"
+        - name: max_batches
+          default: "100"
 
       tasks:
         - task_key: generate_data
           notebook_task:
-            notebook_path: ../0_generate.ipynb
+            notebook_path: ../notebooks/0_generate.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              llm_endpoint: "{{job.parameters.llm_endpoint}}"
+              batch_size: "{{job.parameters.batch_size}}"
+              max_batches: "{{job.parameters.max_batches}}"
             source: WORKSPACE
           environment_key: default
 
@@ -17,7 +32,10 @@ resources:
           depends_on:
             - task_key: generate_data
           notebook_task:
-            notebook_path: ../1_eda.ipynb
+            notebook_path: ../notebooks/1_eda.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
             source: WORKSPACE
           environment_key: default
 
@@ -25,7 +43,13 @@ resources:
           depends_on:
             - task_key: eda_and_split
           notebook_task:
-            notebook_path: ../2_bootstrap.ipynb
+            notebook_path: ../notebooks/2_bootstrap.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              llm_endpoint: "{{job.parameters.llm_endpoint}}"
+              batch_size: "{{job.parameters.batch_size}}"
+              max_batches: "{{job.parameters.max_batches}}"
             source: WORKSPACE
           environment_key: default
 
@@ -33,7 +57,13 @@ resources:
           depends_on:
             - task_key: bootstrap_classify
           notebook_task:
-            notebook_path: ../3_optimize.ipynb
+            notebook_path: ../notebooks/3_optimize.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              llm_endpoint: "{{job.parameters.llm_endpoint}}"
+              batch_size: "{{job.parameters.batch_size}}"
+              max_batches: "{{job.parameters.max_batches}}"
             source: WORKSPACE
           environment_key: default
 
@@ -41,7 +71,10 @@ resources:
           depends_on:
             - task_key: eda_and_split
           notebook_task:
-            notebook_path: ../4_catboost.ipynb
+            notebook_path: ../notebooks/4_catboost.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
             source: WORKSPACE
           environment_key: default
 
@@ -49,7 +82,10 @@ resources:
           depends_on:
             - task_key: eda_and_split
           notebook_task:
-            notebook_path: ../5_vectorsearch.ipynb
+            notebook_path: ../notebooks/5_vectorsearch.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
             source: WORKSPACE
           environment_key: default
 
@@ -59,26 +95,52 @@ resources:
             - task_key: catboost_classify
             - task_key: vectorsearch_classify
           notebook_task:
-            notebook_path: ../6_sync_to_lakebase.ipynb
+            notebook_path: ../notebooks/6_sync_to_lakebase.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
             source: WORKSPACE
           environment_key: default
 
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            environment_version: "4"
+            dependencies:
+              - pyyaml
+              - openai
+              - catboost
+              - databricks-vectorsearch
+              - "databricks-sdk>=0.50.0"
+              - databricks-agents
+              - dspy
+              - seaborn
 
-    # ---------------------------------------------------------------
-    # Accuracy quantification only (re-run classification + metrics)
-    # Assumes invoices and categories already exist
-    # ---------------------------------------------------------------
     quantify_accuracy:
       name: "[${bundle.target}] Quantify Classification Accuracy"
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: llm_endpoint
+          default: ${var.llm_endpoint}
+        - name: batch_size
+          default: "1000"
+        - name: max_batches
+          default: "100"
 
       tasks:
         - task_key: bootstrap_classify
           notebook_task:
-            notebook_path: ../2_bootstrap.ipynb
+            notebook_path: ../notebooks/2_bootstrap.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              llm_endpoint: "{{job.parameters.llm_endpoint}}"
+              batch_size: "{{job.parameters.batch_size}}"
+              max_batches: "{{job.parameters.max_batches}}"
             source: WORKSPACE
           environment_key: default
 
@@ -86,23 +148,44 @@ resources:
           depends_on:
             - task_key: bootstrap_classify
           notebook_task:
-            notebook_path: ../3_optimize.ipynb
+            notebook_path: ../notebooks/3_optimize.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              llm_endpoint: "{{job.parameters.llm_endpoint}}"
+              batch_size: "{{job.parameters.batch_size}}"
+              max_batches: "{{job.parameters.max_batches}}"
             source: WORKSPACE
           environment_key: default
 
         - task_key: catboost_classify
           notebook_task:
-            notebook_path: ../4_catboost.ipynb
+            notebook_path: ../notebooks/4_catboost.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
             source: WORKSPACE
           environment_key: default
 
         - task_key: vectorsearch_classify
           notebook_task:
-            notebook_path: ../5_vectorsearch.ipynb
+            notebook_path: ../notebooks/5_vectorsearch.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
             source: WORKSPACE
           environment_key: default
 
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            environment_version: "4"
+            dependencies:
+              - pyyaml
+              - openai
+              - catboost
+              - databricks-vectorsearch
+              - "databricks-sdk>=0.50.0"
+              - databricks-agents
+              - dspy
+              - seaborn

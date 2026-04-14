@@ -71,9 +71,48 @@ def write_reviews_batch(
     reviews: List[Dict],
     backend: Optional[DatabaseBackend] = None,
 ) -> None:
-    """Write multiple reviews."""
-    for review in reviews:
-        write_review(config, **review, backend=backend)
+    """Write multiple reviews in a single transaction when possible."""
+    if backend is None:
+        from .database import get_backend
+        backend = get_backend()
+
+    from .database import LakebaseBackend
+    if isinstance(backend, LakebaseBackend) and len(reviews) > 1:
+        query_tpl = f"""
+            INSERT INTO {config.full_cat_reviews_table_path}
+            (order_id, source, reviewer, review_date,
+             original_level_1, original_level_2, original_level_3,
+             reviewed_level_1, reviewed_level_2, reviewed_level_3,
+             review_status, comments, created_at)
+            VALUES
+            (%(order_id)s, %(source)s, %(reviewer)s, %(review_date)s,
+             %(original_level_1)s, %(original_level_2)s, %(original_level_3)s,
+             %(reviewed_level_1)s, %(reviewed_level_2)s, %(reviewed_level_3)s,
+             %(review_status)s, %(comments)s, %(created_at)s)
+        """
+        queries = []
+        for r in reviews:
+            params = {
+                "order_id": r["order_id"],
+                "source": r.get("source", ""),
+                "reviewer": r.get("reviewer", ""),
+                "review_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "original_level_1": r.get("original_level_1", ""),
+                "original_level_2": r.get("original_level_2", ""),
+                "original_level_3": r.get("original_level_3", ""),
+                "reviewed_level_1": r.get("reviewed_level_1", ""),
+                "reviewed_level_2": r.get("reviewed_level_2", ""),
+                "reviewed_level_3": r.get("reviewed_level_3", ""),
+                "review_status": r.get("review_status", "corrected"),
+                "comments": r.get("comments", ""),
+                "created_at": datetime.now(timezone.utc),
+            }
+            queries.append((query_tpl, params))
+        backend.execute_writes_batch(queries)
+        logger.info(f"Batch-wrote {len(reviews)} reviews in one transaction")
+    else:
+        for review in reviews:
+            write_review(config, **review, backend=backend)
 
 
 def get_review_history(
@@ -106,44 +145,23 @@ def initialize_reviews_table(
         from .database import get_backend
         backend = get_backend()
 
-    if config.app_mode == "lakebase":
-        query = f"""
-            CREATE TABLE IF NOT EXISTS {config.full_cat_reviews_table_path} (
-                review_id TEXT,
-                order_id TEXT,
-                source TEXT,
-                reviewer TEXT,
-                review_date DATE,
-                original_level_1 TEXT,
-                original_level_2 TEXT,
-                original_level_3 TEXT,
-                reviewed_level_1 TEXT,
-                reviewed_level_2 TEXT,
-                reviewed_level_3 TEXT,
-                review_status TEXT,
-                comments TEXT,
-                created_at TIMESTAMPTZ
-            )
-        """
-    else:
-        query = f"""
-            CREATE TABLE IF NOT EXISTS {config.full_cat_reviews_table_path} (
-                review_id STRING,
-                order_id STRING,
-                source STRING,
-                reviewer STRING,
-                review_date DATE,
-                original_level_1 STRING,
-                original_level_2 STRING,
-                original_level_3 STRING,
-                reviewed_level_1 STRING,
-                reviewed_level_2 STRING,
-                reviewed_level_3 STRING,
-                review_status STRING,
-                comments STRING,
-                created_at TIMESTAMP
-            )
-        """
-
+    query = f"""
+        CREATE TABLE IF NOT EXISTS {config.full_cat_reviews_table_path} (
+            review_id TEXT,
+            order_id TEXT,
+            source TEXT,
+            reviewer TEXT,
+            review_date DATE,
+            original_level_1 TEXT,
+            original_level_2 TEXT,
+            original_level_3 TEXT,
+            reviewed_level_1 TEXT,
+            reviewed_level_2 TEXT,
+            reviewed_level_3 TEXT,
+            review_status TEXT,
+            comments TEXT,
+            created_at TIMESTAMPTZ
+        )
+    """
     backend.execute_write(query)
     logger.info("Initialized cat_reviews table")

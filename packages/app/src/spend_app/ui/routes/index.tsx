@@ -1,0 +1,269 @@
+import { apiFetch } from "@/lib/fetch";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import Plot from "react-plotly.js";
+
+export const Route = createFileRoute("/")({
+  component: Index,
+});
+
+interface TableStatus {
+  table: string;
+  description: string;
+  rows: number;
+  columns: number;
+  column_names: string;
+  status: "ok" | "empty" | "missing";
+}
+
+interface StatusResponse {
+  tables: TableStatus[];
+  backend: string;
+  catalog: string;
+  schema_name: string;
+}
+
+function useStatus() {
+  return useQuery({
+    queryKey: ["status"],
+    queryFn: () => apiFetch<StatusResponse>("/status"),
+  });
+}
+
+function buildSankey(tables: TableStatus[]) {
+  const rowCount = (name: string) =>
+    tables.find((t) => t.table === name)?.rows ?? 0;
+
+  const invoices = rowCount("invoices");
+  const bootstrap = rowCount("cat_bootstrap");
+  const catboost = rowCount("cat_catboost");
+  const vectorsearch = rowCount("cat_vectorsearch");
+  const reviews = rowCount("cat_reviews");
+  const classified = bootstrap + catboost + vectorsearch + reviews;
+
+  const labels = [
+    `Invoices (${invoices.toLocaleString()})`,
+    `LLM Bootstrap (${bootstrap.toLocaleString()})`,
+    `CatBoost (${catboost.toLocaleString()})`,
+    `Vector Search (${vectorsearch.toLocaleString()})`,
+    `Human Reviews (${reviews.toLocaleString()})`,
+    `Classified (${classified.toLocaleString()})`,
+  ];
+
+  const colors = ["#0B2026", "#FF3621", "#2e6e8a", "#3fa8c8", "#22C55E", "#0B2026"];
+
+  // Invoices -> each classifier, each classifier -> Classified, Reviews -> Classified
+  const source = [0, 0, 0, 1, 2, 3, 4];
+  const target = [1, 2, 3, 5, 5, 5, 5];
+  const value = [
+    bootstrap || 1,
+    catboost || 1,
+    vectorsearch || 1,
+    bootstrap || 1,
+    catboost || 1,
+    vectorsearch || 1,
+    reviews || 1,
+  ];
+
+  return { labels, colors, source, target, value };
+}
+
+function Index() {
+  const { data: status, isLoading, error } = useStatus();
+  const sankey = useMemo(
+    () => (status ? buildSankey(status.tables) : null),
+    [status],
+  );
+
+  return (
+    <div className="font-sans">
+      {/* Hero */}
+      <section className="bg-[#0B2026] text-white py-16 px-6">
+        <div className="max-w-7xl mx-auto text-center">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">
+            Classify procurement spend with Databricks
+          </h1>
+          <p className="text-lg text-[#8CA0AC] max-w-2xl mx-auto">
+            A unified pipeline combining LLM bootstrap, CatBoost models, Vector Search RAG, and human review to categorize spend across your organization.
+          </p>
+        </div>
+      </section>
+
+      {/* Sankey */}
+      <section className="py-12 px-6 bg-white">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-2xl font-bold text-[#0B2026] mb-6">Pipeline Flow</h2>
+          <div className="bg-white rounded-lg border border-[#E5EBF0] p-4">
+            {sankey ? (
+              <Plot
+                data={[
+                  {
+                    type: "sankey",
+                    node: {
+                      pad: 15,
+                      thickness: 20,
+                      line: { color: "#E5EBF0", width: 0.5 },
+                      label: sankey.labels,
+                      color: sankey.colors,
+                    },
+                    link: {
+                      source: sankey.source,
+                      target: sankey.target,
+                      value: sankey.value,
+                      color: "rgba(139, 160, 172, 0.3)",
+                    },
+                  },
+                ]}
+                layout={{
+                  paper_bgcolor: "white",
+                  plot_bgcolor: "white",
+                  font: { family: "DM Sans", size: 12 },
+                  margin: { t: 20, b: 20, l: 20, r: 20 },
+                  height: 400,
+                }}
+                config={{ responsive: true }}
+                useResizeHandler
+                className="w-full"
+              />
+            ) : (
+              <p className="text-[#8CA0AC] p-6">Loading pipeline data...</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Table Status */}
+      <section className="py-12 px-6 bg-[#F7F9FA]">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-2xl font-bold text-[#0B2026] mb-6">Table Status</h2>
+          {isLoading && <p className="text-[#8CA0AC]">Loading...</p>}
+          {error && (
+            <p className="text-[#FF3621]">Failed to load status: {(error as Error).message}</p>
+          )}
+          {status && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {status.tables.map((t) => (
+                <div
+                  key={t.table}
+                  className="bg-white rounded-lg border border-[#E5EBF0] p-4 flex items-center justify-between"
+                >
+                  <div>
+                    <p className="font-semibold text-[#0B2026]">{t.table}</p>
+                    <p className="text-xs text-[#8CA0AC] mb-1">{t.description}</p>
+                    <p className="text-sm text-[#8CA0AC]">
+                      {t.rows.toLocaleString()} rows · {t.columns} cols
+                    </p>
+                  </div>
+                  <span
+                    className={`px-2 py-1 rounded text-xs font-medium ${
+                      t.status === "ok"
+                        ? "bg-[#22C55E]/20 text-[#22C55E]"
+                        : t.status === "empty"
+                          ? "bg-amber-200 text-amber-800"
+                          : "bg-[#FF3621]/20 text-[#FF3621]"
+                    }`}
+                  >
+                    {t.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {status && (
+            <p className="mt-4 text-sm text-[#8CA0AC]">
+              Backend: {status.backend} · Catalog: {status.catalog} · Schema: {status.schema_name}
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section className="py-12 px-6 bg-white">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-2xl font-bold text-[#0B2026] mb-8">How It Works</h2>
+          <ol className="space-y-6">
+            {[
+              {
+                step: 1,
+                title: "Ingest raw invoices",
+                desc: "Raw procurement data is loaded into staging tables with supplier, description, and amount fields.",
+              },
+              {
+                step: 2,
+                title: "LLM bootstrap labels",
+                desc: "A Foundation Model (GPT-4 or similar) generates initial category labels for a sample of ~1K invoices.",
+              },
+              {
+                step: 3,
+                title: "Train CatBoost and index for Vector Search",
+                desc: "CatBoost learns from bootstrap labels and existing classifications. Vector Search indexes embeddings for semantic similarity.",
+              },
+              {
+                step: 4,
+                title: "Human review low-confidence predictions",
+                desc: "Invoices flagged with low confidence are queued for human review. Corrections feed back into the model.",
+              },
+              {
+                step: 5,
+                title: "Classified spend analytics",
+                desc: "Final categorized spend is available for reporting, dashboards, and downstream analytics.",
+              },
+            ].map(({ step, title, desc }) => (
+              <li key={step} className="flex gap-4">
+                <span className="flex-shrink-0 w-8 h-8 rounded-full bg-[#FF3621] text-white font-bold flex items-center justify-center text-sm">
+                  {step}
+                </span>
+                <div>
+                  <h3 className="font-semibold text-[#0B2026]">{title}</h3>
+                  <p className="text-[#8CA0AC]"> {desc}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* Navigation Cards */}
+      <section className="py-12 px-6 bg-[#F7F9FA]">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-2xl font-bold text-[#0B2026] mb-6">Explore</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Link to="/classifications">
+              <div className="bg-white rounded-lg border border-[#E5EBF0] p-6 hover:border-[#FF3621] transition-colors cursor-pointer">
+                <h3 className="font-semibold text-[#0B2026] mb-2">Classifications</h3>
+                <p className="text-sm text-[#8CA0AC]">
+                  Browse classifications, model performance, and submit corrections
+                </p>
+              </div>
+            </Link>
+            <Link to="/review">
+              <div className="bg-white rounded-lg border border-[#E5EBF0] p-6 hover:border-[#FF3621] transition-colors cursor-pointer">
+                <h3 className="font-semibold text-[#0B2026] mb-2">Spend Review</h3>
+                <p className="text-sm text-[#8CA0AC]">
+                  Search, flag, and review low-confidence invoices
+                </p>
+              </div>
+            </Link>
+            <Link to="/analytics">
+              <div className="bg-white rounded-lg border border-[#E5EBF0] p-6 hover:border-[#FF3621] transition-colors cursor-pointer">
+                <h3 className="font-semibold text-[#0B2026] mb-2">Spend Analytics</h3>
+                <p className="text-sm text-[#8CA0AC]">
+                  Spend breakdowns, trends, top suppliers, and regional analysis
+                </p>
+              </div>
+            </Link>
+            <Link to="/comparison">
+              <div className="bg-white rounded-lg border border-[#E5EBF0] p-6 hover:border-[#FF3621] transition-colors cursor-pointer">
+                <h3 className="font-semibold text-[#0B2026] mb-2">Platform</h3>
+                <p className="text-sm text-[#8CA0AC]">
+                  Why Databricks and future roadmap
+                </p>
+              </div>
+            </Link>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}

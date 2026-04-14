@@ -104,28 +104,57 @@ categorize:
     cat_reviews: cat_reviews
 
 app:
-  mode: lakebase # test (CSV mock) | prod (statement execution) | lakebase (PostgreSQL)
   page_size: 50
   default_user: user
-  categorization_source: bootstrap # bootstrap | catboost | vectorsearch
+  categorization_source: catboost # bootstrap | catboost | vectorsearch
 
-  # Lakebase PostgreSQL (lakebase mode)
+  # Lakebase PostgreSQL connection
   lakebase_instance: spend-categorization
   lakebase_dbname: databricks_postgres
 
-  # App tables
-  tables:
-    reviews: reviews
+  # Column mappings -- change these to point at a different dataset
+  columns:
+    id: order_id             # primary key / join column
+    date: date               # date column for time series
+    description: description # text description for search
+    supplier: supplier       # vendor / supplier name
+    amount: total            # spend amount (used for aggregation)
+    category_l1: category_level_1
+    category_l2: category_level_2
+    category_l3: category_level_3
+    region: region           # geographic region
+    pred_l1: pred_level_1
+    pred_l2: pred_level_2
+    pred_l3: pred_level_3
+    actual_l1: actual_level_1
+    actual_l2: actual_level_2
+    actual_l3: actual_level_3
+    confidence: confidence
 
-  ui:
-    title: Spend Categorization
-    icon: databricks
+  # Tables loaded into the app at startup
+  # label -> {table: <table_name_in_schema>, description: <human label>}
+  tables:
+    invoices:
+      table: invoices
+      description: Source invoices
+    categories:
+      table: categories
+      description: Category hierarchy
+    cat_bootstrap:
+      table: cat_bootstrap
+      description: LLM bootstrap predictions
+    cat_catboost:
+      table: cat_catboost
+      description: CatBoost predictions
+    cat_vectorsearch:
+      table: cat_vectorsearch
+      description: Vector search predictions
+    cat_reviews:
+      table: cat_reviews
+      description: Human review corrections
+      native: true  # not a synced table
 
   search:
-    default_fields:
-      - order_id
-      - supplier
-      - description
     max_results: 500
 
   flagging:

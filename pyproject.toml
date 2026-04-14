@@ -8,14 +8,16 @@ dependencies = [
     "databricks-sdk>=0.18.0",
     "mlflow>=3.4",
     "pandas>=2.0.0",
+    "pydantic>=2.0.0",
     "pyyaml>=6.0.0",
     "openai",
 ]
 
 [project.optional-dependencies]
 app = [
-    "streamlit>=1.28.0",
-    "plotly>=6.6.0",
+    "fastapi>=0.119.0",
+    "uvicorn>=0.37.0",
+    "pydantic-settings>=2.11.0",
 ]
 lakebase = [
     "pgvector",
@@ -41,7 +43,7 @@ dev = [
 
 [tool.black]
 line-length = 88
-target-version = ['py39']
+target-version = ['py310']
 
 [tool.isort]
 profile = "black"
@@ -61,7 +63,12 @@ testpaths = [
     "tests",
 ]
 
+[tool.uv]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
 [dependency-groups]
-dev = [
+test = [
     "playwright>=1.58.0",
 ]

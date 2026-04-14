@@ -1,45 +1,57 @@
 """Test configuration module."""
 
-import pytest
-from src.config import Config, load_config
+from src.config import Config, ColumnMap, AppTableDef, load_config
 
 
-def test_config_defaults():
-    """Test Config default values."""
-    # Can't create without required fields, so test loading from YAML
-    config = load_config()
-    assert config.app_mode in ["test", "prod", "lakebase"]
-    assert config.page_size == 50
-
-
-def test_load_config():
+def test_config_loads():
     """Test loading config from YAML file."""
     config = load_config()
     assert isinstance(config, Config)
-    
-    # Test generate fields
     assert config.company_name
     assert config.catalog
     assert config.schema_name
     assert config.invoices
-    
-    # Test categorize fields
-    assert config.prompts
-    assert config.cat_bootstrap
-    
-    # Test app fields
-    assert config.app_mode in ["test", "prod", "lakebase"]
-    assert config.reviews
 
 
 def test_config_table_paths():
     """Test full table path properties work."""
     config = load_config()
-    
-    # Generate paths
-    assert config.full_invoices_table_path == f"{config.catalog}.{config.schema_name}.{config.invoices}"
-    assert config.full_categories_table_path == f"{config.catalog}.{config.schema_name}.{config.categories_table}"
-    
-    # Categorize paths
-    assert config.full_prompts_table_path == f"{config.catalog}.{config.schema_name}.{config.prompts}"
-    assert config.full_cat_bootstrap_table_path == f"{config.catalog}.{config.schema_name}.{config.cat_bootstrap}"
+    expected = f"{config.catalog}.{config.schema_name}.{config.invoices}"
+    assert config.full_invoices_table_path == expected
+
+
+def test_config_column_mapping():
+    """Test that column mapping loads from YAML."""
+    config = load_config()
+    assert isinstance(config.col, ColumnMap)
+    assert config.col.id
+    assert config.col.amount
+    assert config.col.category_l1
+
+
+def test_config_app_tables():
+    """Test that app tables load from YAML."""
+    config = load_config()
+    assert "invoices" in config.app_tables
+    assert isinstance(config.app_tables["invoices"], AppTableDef)
+    assert config.app_tables["invoices"].table == "invoices"
+
+
+def test_config_app_table_path():
+    """Test app_table_path helper."""
+    config = load_config()
+    path = config.app_table_path("invoices")
+    assert path == f"{config.catalog}.{config.schema_name}.invoices"
+
+
+def test_config_app_table_native():
+    """Test native table detection."""
+    config = load_config()
+    assert config.app_table_is_native("cat_reviews") is True
+    assert config.app_table_is_native("invoices") is False
+
+
+def test_config_lakebase_required():
+    """Test that lakebase_instance is set."""
+    config = load_config()
+    assert config.lakebase_instance
