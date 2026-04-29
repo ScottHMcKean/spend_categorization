@@ -1,4 +1,6 @@
 import { apiFetch } from "@/lib/fetch";
+import { SchemaBadge } from "@/components/apx/schema-selector";
+import { useSchema } from "@/lib/schema-context";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -12,28 +14,29 @@ interface AnalyticsSummary {
   total_spend: number;
   invoice_count: number;
   supplier_count: number;
+  prediction_count: number;
+  review_count: number;
+  predictions_by_source: Record<string, unknown>[];
   spend_by_l1: Record<string, unknown>[];
   spend_by_l2: Record<string, unknown>[];
   monthly_trend: Record<string, unknown>[];
   top_suppliers: Record<string, unknown>[];
   region_category: Record<string, unknown>[];
-  bootstrap_count: number;
-  catboost_count: number;
-  vectorsearch_count: number;
-  review_count: number;
 }
 
-function useAnalyticsSummary() {
+function useAnalyticsSummary(schemaName: string) {
   return useQuery({
-    queryKey: ["analytics", "summary"],
-    queryFn: () => apiFetch<AnalyticsSummary>("/analytics/summary"),
+    queryKey: ["analytics", "summary", schemaName],
+    queryFn: () =>
+      apiFetch<AnalyticsSummary>(`/analytics/summary?schema_name=${encodeURIComponent(schemaName)}`),
   });
 }
 
 function Analytics() {
+  const { schemaName } = useSchema();
   const [l1Filter, setL1Filter] = useState<string>("");
 
-  const { data: summary, isLoading } = useAnalyticsSummary();
+  const { data: summary, isLoading } = useAnalyticsSummary(schemaName);
 
   const l1Options = Array.from(
     new Set(
@@ -101,7 +104,10 @@ function Analytics() {
       </aside>
 
       <div className="flex-1 min-w-0">
-        <h1 className="text-3xl font-bold text-[#0B2026] mb-6">Spend Analytics</h1>
+        <div className="flex flex-wrap items-baseline justify-between gap-3 mb-6">
+          <h1 className="text-3xl font-bold text-[#0B2026]">Spend Analytics</h1>
+          <SchemaBadge />
+        </div>
 
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="rounded-lg border border-[#E5EBF0] bg-white p-4">

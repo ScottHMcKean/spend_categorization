@@ -1,17 +1,31 @@
 [project]
 name = "spend-categorization"
-version = "0.1.0"
+version = "0.2.5"
 description = "Invoice spend classification with Databricks"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "databricks-sdk>=0.18.0",
-    "mlflow>=3.4",
     "pandas>=2.0.0",
     "pydantic>=2.0.0",
     "pyyaml>=6.0.0",
     "openai",
+    "openpyxl>=3.1.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"config.yaml" = "src/config.yaml"
+"assets/categories.csv" = "src/assets/categories.csv"
+"assets/new_gl_map.xlsx" = "src/assets/new_gl_map.xlsx"
+# unspsc Excel is 14MB and exceeds Databricks Apps' 10MB upload cap.
+# UNSPSC is loaded from the Lakebase synced table at runtime instead.
 
 [project.optional-dependencies]
 app = [

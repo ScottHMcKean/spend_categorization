@@ -55,7 +55,7 @@ generate:
     schema: spend
     small_llm_endpoint: databricks-gpt-oss-20b
     large_llm_endpoint: databricks-claude-sonnet-4-5
-    rows: 5000
+    rows: 1000
     start: 2024-01-01
     end: 2025-12-31
     distribution:
@@ -100,7 +100,8 @@ categorize:
     prompts: prompts
     cat_bootstrap: cat_bootstrap
     cat_catboost: cat_catboost
-    cat_vectorsearch: cat_vectorsearch 
+    cat_vectorsearch: cat_vectorsearch
+    cat_agent: cat_agent
     cat_reviews: cat_reviews
 
 app:
@@ -109,7 +110,7 @@ app:
   categorization_source: catboost # bootstrap | catboost | vectorsearch
 
   # Lakebase PostgreSQL connection
-  lakebase_instance: spend-categorization
+  lakebase_instance: spend-app
   lakebase_dbname: databricks_postgres
 
   # Column mappings -- change these to point at a different dataset
@@ -131,24 +132,28 @@ app:
     actual_l3: actual_level_3
     confidence: confidence
 
-  # Tables loaded into the app at startup
-  # label -> {table: <table_name_in_schema>, description: <human label>}
+  # Tables loaded into the app at startup. After the v2 refactor every
+  # prediction lives in `cat_predictions`; the app only needs the unified
+  # tables, taxonomies, and reviews.
   tables:
     invoices:
       table: invoices
       description: Source invoices
-    categories:
-      table: categories
-      description: Category hierarchy
-    cat_bootstrap:
-      table: cat_bootstrap
-      description: LLM bootstrap predictions
-    cat_catboost:
-      table: cat_catboost
-      description: CatBoost predictions
-    cat_vectorsearch:
-      table: cat_vectorsearch
-      description: Vector search predictions
+    cat_predictions:
+      table: cat_predictions
+      description: Unified per-(order_id, schema_name, source) predictions
+    schema_registry:
+      table: schema_registry
+      description: Registered classification schemas
+    three_level_taxonomy:
+      table: three_level_taxonomy
+      description: Normalized 3-level spend taxonomy
+    gl_map_taxonomy:
+      table: gl_map_taxonomy
+      description: Normalized GL account taxonomy
+    unspsc_taxonomy:
+      table: unspsc_taxonomy
+      description: Normalized UNSPSC commodity taxonomy (~150k rows; synced for hierarchy browsing)
     cat_reviews:
       table: cat_reviews
       description: Human review corrections

@@ -1,4 +1,6 @@
 import { apiFetch } from "@/lib/fetch";
+import { useSchema } from "@/lib/schema-context";
+import { SchemaBadge } from "@/components/apx/schema-selector";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -24,6 +26,14 @@ interface StatusResponse {
   schema_name: string;
 }
 
+interface AnalyticsSummary {
+  total_spend: number;
+  invoice_count: number;
+  prediction_count: number;
+  review_count: number;
+  predictions_by_source: { source: string; count: number }[];
+}
+
 function useStatus() {
   return useQuery({
     queryKey: ["status"],
@@ -31,50 +41,89 @@ function useStatus() {
   });
 }
 
-function buildSankey(tables: TableStatus[]) {
-  const rowCount = (name: string) =>
-    tables.find((t) => t.table === name)?.rows ?? 0;
+function useSummary(schemaName: string) {
+  return useQuery({
+    queryKey: ["analytics", "summary", schemaName, "sankey"],
+    queryFn: () =>
+      apiFetch<AnalyticsSummary>(`/analytics/summary?schema_name=${encodeURIComponent(schemaName)}`),
+    enabled: !!schemaName,
+  });
+}
 
-  const invoices = rowCount("invoices");
-  const bootstrap = rowCount("cat_bootstrap");
-  const catboost = rowCount("cat_catboost");
-  const vectorsearch = rowCount("cat_vectorsearch");
-  const reviews = rowCount("cat_reviews");
-  const classified = bootstrap + catboost + vectorsearch + reviews;
+const SOURCE_COLORS: Record<string, string> = {
+  ai_classify: "#FF3621",
+  ai_classify_chat: "#FF7A56",
+  catboost: "#2e6e8a",
+  pgvector: "#3fa8c8",
+  tsvector: "#3fa8c8",
+  agent_review: "#22C55E",
+  ai_query_bootstrap: "#FF3621",
+};
 
-  const labels = [
+/**
+ * Schema-aware Sankey:
+ *   Invoices ─┬─► <source 1> (n)
+ *             ├─► <source 2> (n)
+ *             └─► <source N> (n)        ─► cat_predictions (sum) ─► Reviewed
+ *                                                                ▲
+ *                                                Human Reviews (n)┘
+ */
+function buildSankey(
+  invoices: number,
+  reviews: number,
+  bySource: { source: string; count: number }[],
+) {
+  const sources = bySource.filter((s) => s.count > 0).sort((a, b) => b.count - a.count);
+  const totalPreds = sources.reduce((acc, s) => acc + s.count, 0);
+
+  const invoicesIdx = 0;
+  const predIdx = 1 + sources.length;
+  const reviewsIdx = predIdx + 1;
+  const reviewedIdx = predIdx + 2;
+
+  const labels: string[] = [
     `Invoices (${invoices.toLocaleString()})`,
-    `LLM Bootstrap (${bootstrap.toLocaleString()})`,
-    `CatBoost (${catboost.toLocaleString()})`,
-    `Vector Search (${vectorsearch.toLocaleString()})`,
+    ...sources.map((s) => `${s.source} (${s.count.toLocaleString()})`),
+    `cat_predictions (${totalPreds.toLocaleString()})`,
     `Human Reviews (${reviews.toLocaleString()})`,
-    `Classified (${classified.toLocaleString()})`,
+    "Reviewed Spend",
+  ];
+  const colors: string[] = [
+    "#0B2026",
+    ...sources.map((s) => SOURCE_COLORS[s.source] ?? "#8CA0AC"),
+    "#FF3621",
+    "#22C55E",
+    "#0B2026",
   ];
 
-  const colors = ["#0B2026", "#FF3621", "#2e6e8a", "#3fa8c8", "#22C55E", "#0B2026"];
+  const source: number[] = [];
+  const target: number[] = [];
+  const value: number[] = [];
 
-  // Invoices -> each classifier, each classifier -> Classified, Reviews -> Classified
-  const source = [0, 0, 0, 1, 2, 3, 4];
-  const target = [1, 2, 3, 5, 5, 5, 5];
-  const value = [
-    bootstrap || 1,
-    catboost || 1,
-    vectorsearch || 1,
-    bootstrap || 1,
-    catboost || 1,
-    vectorsearch || 1,
-    reviews || 1,
-  ];
+  sources.forEach((s, i) => {
+    source.push(invoicesIdx); target.push(1 + i); value.push(s.count);
+    source.push(1 + i); target.push(predIdx); value.push(s.count);
+  });
+  if (sources.length === 0) {
+    source.push(invoicesIdx); target.push(predIdx); value.push(1);
+  }
+  source.push(predIdx); target.push(reviewedIdx); value.push(totalPreds || 1);
+  source.push(reviewsIdx); target.push(reviewedIdx); value.push(reviews || 1);
 
   return { labels, colors, source, target, value };
 }
 
 function Index() {
   const { data: status, isLoading, error } = useStatus();
-  const sankey = useMemo(
-    () => (status ? buildSankey(status.tables) : null),
-    [status],
-  );
+  const { schemaName, current } = useSchema();
+  const { data: summary } = useSummary(schemaName);
+  const sankey = useMemo(() => {
+    if (!status) return null;
+    const invoices = status.tables.find((t) => t.table === "invoices")?.rows ?? 0;
+    const reviews = status.tables.find((t) => t.table === "cat_reviews")?.rows ?? 0;
+    const bySource = (summary?.predictions_by_source ?? []) as { source: string; count: number }[];
+    return buildSankey(invoices, reviews, bySource);
+  }, [status, summary]);
 
   return (
     <div className="font-sans">
@@ -93,7 +142,15 @@ function Index() {
       {/* Sankey */}
       <section className="py-12 px-6 bg-white">
         <div className="max-w-7xl mx-auto">
-          <h2 className="text-2xl font-bold text-[#0B2026] mb-6">Pipeline Flow</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-3 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-[#0B2026]">Pipeline Flow</h2>
+              <p className="text-sm text-[#8CA0AC]">
+                Sources contributing to <strong>{current?.display_name ?? schemaName}</strong> predictions
+              </p>
+            </div>
+            <SchemaBadge />
+          </div>
           <div className="bg-white rounded-lg border border-[#E5EBF0] p-4">
             {sankey ? (
               <Plot
@@ -185,6 +242,11 @@ function Index() {
           <ol className="space-y-6">
             {[
               {
+                step: 0,
+                title: "Define taxonomies",
+                desc: "Register one or more classification schemas (3-level Direct/Indirect, GL accounts, UNSPSC). Each schema lands as a normalized taxonomy table; the app dropdown discovers them automatically.",
+              },
+              {
                 step: 1,
                 title: "Ingest raw invoices",
                 desc: "Raw procurement data is loaded into staging tables with supplier, description, and amount fields.",
@@ -192,22 +254,22 @@ function Index() {
               {
                 step: 2,
                 title: "LLM bootstrap labels",
-                desc: "A Foundation Model (GPT-4 or similar) generates initial category labels for a sample of ~1K invoices.",
+                desc: "Hierarchical ai_classify generates initial category labels per schema and writes them to the unified cat_predictions table.",
               },
               {
                 step: 3,
                 title: "Train CatBoost and index for Vector Search",
-                desc: "CatBoost learns from bootstrap labels and existing classifications. Vector Search indexes embeddings for semantic similarity.",
+                desc: "CatBoost learns from bootstrap labels. Lakebase pgvector + tsvector hybrid search powers UNSPSC's 150k commodity codes.",
               },
               {
                 step: 4,
                 title: "Human review low-confidence predictions",
-                desc: "Invoices flagged with low confidence are queued for human review. Corrections feed back into the model.",
+                desc: "Invoices flagged with low confidence are queued for an agent reviewer and human review. Corrections feed back into the model.",
               },
               {
                 step: 5,
                 title: "Classified spend analytics",
-                desc: "Final categorized spend is available for reporting, dashboards, and downstream analytics.",
+                desc: "Final categorized spend is available for reporting, dashboards, and downstream analytics through vw_spend_by_<schema> views.",
               },
             ].map(({ step, title, desc }) => (
               <li key={step} className="flex gap-4">

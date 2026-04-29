@@ -74,6 +74,12 @@ class ReviewIn(BaseModel):
     reviewed_level_3: str = ""
     review_status: str = "corrected"
     comments: str = ""
+    # Schema-aware leaf selection (used when reviewing taxonomies that
+    # aren't 3-level — e.g. UNSPSC, gl_map). When provided, the backend
+    # derives ``reviewed_level_1/2/3`` from ``reviewed_level_path``.
+    reviewed_code: str | None = None
+    reviewed_label: str | None = None
+    reviewed_level_path: list[str] | None = None
 
 
 class ReviewOut(BaseModel):
@@ -95,10 +101,9 @@ class AnalyticsSummary(BaseModel):
     total_spend: float
     invoice_count: int
     supplier_count: int
-    bootstrap_count: int
-    catboost_count: int
-    vectorsearch_count: int
+    prediction_count: int
     review_count: int
+    predictions_by_source: list[dict[str, Any]]
     spend_by_l1: list[dict[str, Any]]
     spend_by_l2: list[dict[str, Any]]
     monthly_trend: list[dict[str, Any]]
@@ -124,3 +129,27 @@ class AccuracyResponse(BaseModel):
     total_correct: int
     source: str
     categories: list[CategoryAccuracy]
+
+
+class AgentToolCall(BaseModel):
+    name: str
+    args: dict[str, Any] = {}
+    result: Any | None = None
+
+
+class AgentReviewOut(BaseModel):
+    order_id: str
+    schema_name: str
+    bootstrap: dict[str, Any]
+    suggested_code: str | None = None
+    suggested_label: str | None = None
+    suggested_level_path: list[str] | None = None
+    suggested_level_1: str | None = None
+    suggested_level_2: str | None = None
+    suggested_level_3: str | None = None
+    confidence: int | None = None
+    agrees_with_bootstrap: bool | None = None
+    rationale: str = ""
+    tool_calls: list[AgentToolCall] = []
+    error: str | None = None
+    latency_seconds: float = 0.0

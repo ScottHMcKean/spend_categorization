@@ -7,6 +7,10 @@ workspace:
 include:
   - resources/*.yml
 
+sync:
+  include:
+    - packages/app/.build/**
+
 targets:
   dev:
     mode: development
@@ -30,3 +34,12 @@ variables:
   llm_endpoint:
     description: LLM endpoint for generation and classification
     default: databricks-claude-sonnet-4-5
+  app_name:
+    description: Databricks App name
+    default: spend-app
+  lakebase_instance:
+    description: Lakebase database instance name
+    default: spend-app
+  lakebase_dbname:
+    description: Lakebase database name (postgres database within the instance)
+    default: databricks_postgres

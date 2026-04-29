@@ -3,6 +3,7 @@
 Single config class that loads everything from config.yaml.
 """
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
@@ -11,18 +12,52 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+def _resolve_config_path(config_path: Optional[str] = None) -> Path:
+    """Find config.yaml across dev, packaged-wheel, and env-override layouts."""
+    if config_path is not None:
+        return Path(config_path)
+
+    env_path = os.environ.get("SPEND_CONFIG_PATH")
+    if env_path:
+        return Path(env_path)
+
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here.parent / "config.yaml",  # repo root (dev)
+        here / "config.yaml",         # bundled inside src/ (wheel)
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]  # let the caller see the canonical missing path
+
+
 def _load_yaml(config_path: Optional[str] = None) -> dict:
     """Load and return the config.yaml file."""
-    if config_path is None:
-        config_path = Path(__file__).parent.parent / "config.yaml"
-    else:
-        config_path = Path(config_path)
+    resolved = _resolve_config_path(config_path)
+    if not resolved.exists():
+        raise FileNotFoundError(f"Config not found: {resolved}")
 
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config not found: {config_path}")
-
-    with open(config_path, "r") as f:
+    with open(resolved, "r") as f:
         return yaml.safe_load(f)
+
+
+def _resolve_categories_csv(csv_file: str, config_path: Optional[str] = None) -> Path:
+    """Find the categories CSV next to config.yaml or bundled in the wheel."""
+    here = Path(__file__).resolve().parent
+    if config_path:
+        candidates = [Path(config_path).parent / csv_file]
+    else:
+        candidates = []
+    candidates += [
+        here.parent / csv_file,             # repo root layout
+        here / csv_file,                    # wheel package layout (src/assets/...)
+        here / Path(csv_file).name,         # wheel flat layout
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]
 
 
 class AppTableDef(BaseModel):
@@ -79,6 +114,7 @@ class Config(BaseModel):
     cat_bootstrap: str = "cat_bootstrap"
     cat_catboost: str = "cat_catboost"
     cat_vectorsearch: str = "cat_vectorsearch"
+    cat_agent: str = "cat_agent"
     cat_reviews: str = "cat_reviews"
 
     # Active categorization source
@@ -164,6 +200,10 @@ class Config(BaseModel):
         return self.full_table_path(self.cat_vectorsearch)
 
     @property
+    def full_cat_agent_table_path(self) -> str:
+        return self.full_table_path(self.cat_agent)
+
+    @property
     def full_cat_reviews_table_path(self) -> str:
         return self.full_table_path(self.cat_reviews)
 
@@ -179,10 +219,7 @@ class Config(BaseModel):
     # --- Category Methods ---
 
     def get_category_descriptions(self, config_path: Optional[str] = None) -> Dict[str, str]:
-        if config_path is None:
-            csv_path = Path(__file__).parent.parent / self.categories_file
-        else:
-            csv_path = Path(config_path).parent / self.categories_file
+        csv_path = _resolve_categories_csv(self.categories_file, config_path)
         df = pd.read_csv(csv_path)
         return dict(zip(df["category_level_3"], df["category_level_3_description"]))
 
@@ -197,10 +234,7 @@ class Config(BaseModel):
         gen_data = gen["data"]
 
         csv_file = company["categories_file"]
-        if config_path:
-            csv_path = Path(config_path).parent / csv_file
-        else:
-            csv_path = Path(__file__).parent.parent / csv_file
+        csv_path = _resolve_categories_csv(csv_file, config_path)
 
         if not csv_path.exists():
             raise FileNotFoundError(f"Categories CSV not found: {csv_path}")
@@ -246,6 +280,7 @@ class Config(BaseModel):
             cat_bootstrap=cat_tables.get("cat_bootstrap", "cat_bootstrap"),
             cat_catboost=cat_tables.get("cat_catboost", "cat_catboost"),
             cat_vectorsearch=cat_tables.get("cat_vectorsearch", "cat_vectorsearch"),
+            cat_agent=cat_tables.get("cat_agent", "cat_agent"),
             cat_reviews=cat_tables.get("cat_reviews", "cat_reviews"),
             categorization_source=app.get("categorization_source", "bootstrap"),
             small_llm_endpoint=gen_data["small_llm_endpoint"],

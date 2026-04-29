@@ -15,9 +15,14 @@ from .core._config import logger as _logger
 
 logger = _logger
 
-_project_root = Path(__file__).resolve().parents[5]
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+# When running from a source checkout we want `from src.config import ...` to
+# resolve to the workspace's src/. When installed as a wheel, the
+# `spend_categorization` package places `src/` in site-packages directly and
+# this block is a no-op.
+_candidate_root = Path(__file__).resolve().parents[5] if len(Path(__file__).resolve().parents) > 5 else None
+if _candidate_root and (_candidate_root / "src" / "config.py").exists():
+    if str(_candidate_root) not in sys.path:
+        sys.path.insert(0, str(_candidate_root))
 
 
 def _col_summary(df: pd.DataFrame) -> tuple[int, str]:
@@ -34,7 +39,9 @@ class DataCacheDependency(LifespanDependency):
         from src.config import load_config
         from src.app.database import create_backend
 
-        config = load_config(str(_project_root / "config.yaml"))
+        # Pass no path -- let the resolver find config.yaml in dev (repo root)
+        # or in the installed wheel (src/config.yaml).
+        config = load_config()
         backend = create_backend(config)
 
         data: dict[str, pd.DataFrame] = {}

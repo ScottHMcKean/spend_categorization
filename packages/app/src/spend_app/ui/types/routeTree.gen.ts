@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './../routes/__root'
+import { Route as TaxonomyRouteImport } from './../routes/taxonomy'
 import { Route as ReviewRouteImport } from './../routes/review'
 import { Route as ComparisonRouteImport } from './../routes/comparison'
 import { Route as ClassificationsRouteImport } from './../routes/classifications'
 import { Route as AnalyticsRouteImport } from './../routes/analytics'
 import { Route as IndexRouteImport } from './../routes/index'
 
+const TaxonomyRoute = TaxonomyRouteImport.update({
+  id: '/taxonomy',
+  path: '/taxonomy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReviewRoute = ReviewRouteImport.update({
   id: '/review',
   path: '/review',
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/classifications': typeof ClassificationsRoute
   '/comparison': typeof ComparisonRoute
   '/review': typeof ReviewRoute
+  '/taxonomy': typeof TaxonomyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/classifications': typeof ClassificationsRoute
   '/comparison': typeof ComparisonRoute
   '/review': typeof ReviewRoute
+  '/taxonomy': typeof TaxonomyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,12 +70,25 @@ export interface FileRoutesById {
   '/classifications': typeof ClassificationsRoute
   '/comparison': typeof ComparisonRoute
   '/review': typeof ReviewRoute
+  '/taxonomy': typeof TaxonomyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/analytics' | '/classifications' | '/comparison' | '/review'
+  fullPaths:
+    | '/'
+    | '/analytics'
+    | '/classifications'
+    | '/comparison'
+    | '/review'
+    | '/taxonomy'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/analytics' | '/classifications' | '/comparison' | '/review'
+  to:
+    | '/'
+    | '/analytics'
+    | '/classifications'
+    | '/comparison'
+    | '/review'
+    | '/taxonomy'
   id:
     | '__root__'
     | '/'
@@ -75,6 +96,7 @@ export interface FileRouteTypes {
     | '/classifications'
     | '/comparison'
     | '/review'
+    | '/taxonomy'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -83,10 +105,18 @@ export interface RootRouteChildren {
   ClassificationsRoute: typeof ClassificationsRoute
   ComparisonRoute: typeof ComparisonRoute
   ReviewRoute: typeof ReviewRoute
+  TaxonomyRoute: typeof TaxonomyRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/taxonomy': {
+      id: '/taxonomy'
+      path: '/taxonomy'
+      fullPath: '/taxonomy'
+      preLoaderRoute: typeof TaxonomyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/review': {
       id: '/review'
       path: '/review'
@@ -131,6 +161,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClassificationsRoute: ClassificationsRoute,
   ComparisonRoute: ComparisonRoute,
   ReviewRoute: ReviewRoute,
+  TaxonomyRoute: TaxonomyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

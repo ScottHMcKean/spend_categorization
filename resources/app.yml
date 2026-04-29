@@ -1,0 +1,17 @@
+resources:
+  database_instances:
+    spend_db:
+      name: ${var.lakebase_instance}
+      capacity: CU_1
+
+  apps:
+    spend_app:
+      name: ${var.app_name}
+      description: "Spend categorization review app (FastAPI + React)"
+      source_code_path: ${workspace.file_path}/packages/app/.build
+      resources:
+        - name: db
+          database:
+            database_name: ${var.lakebase_dbname}
+            instance_name: ${resources.database_instances.spend_db.name}
+            permission: CAN_CONNECT_AND_CREATE

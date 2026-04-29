@@ -294,25 +294,35 @@ class ServerlessBackend(DatabaseBackend):
 
 
 def create_backend(config: "Config") -> DatabaseBackend:
-    """Create a LakebaseBackend from configuration."""
-    if not config.lakebase_instance:
-        raise ValueError(
-            "lakebase_instance is required in config.yaml app section"
-        )
+    """Create a database backend from configuration.
 
-    native_tables: set[str] = set()
-    for label, tdef in config.app_tables.items():
-        if tdef.native:
-            native_tables.add(tdef.table)
+    Tries LakebaseBackend first; falls back to ServerlessBackend when the
+    Lakebase instance is not configured or not reachable.
+    """
+    if config.lakebase_instance:
+        native_tables: set[str] = set()
+        for label, tdef in config.app_tables.items():
+            if tdef.native:
+                native_tables.add(tdef.table)
 
-    logger.info(f"Creating LakebaseBackend (instance: {config.lakebase_instance})")
-    return LakebaseBackend(
-        instance=config.lakebase_instance,
-        dbname=config.lakebase_dbname,
-        catalog=config.catalog,
-        schema_name=config.schema_name,
-        native_tables=native_tables,
-    )
+        try:
+            backend = LakebaseBackend(
+                instance=config.lakebase_instance,
+                dbname=config.lakebase_dbname,
+                catalog=config.catalog,
+                schema_name=config.schema_name,
+                native_tables=native_tables,
+            )
+            if backend.is_connected():
+                logger.info(f"Using LakebaseBackend (instance: {config.lakebase_instance})")
+                return backend
+            logger.warning("Lakebase instance not reachable, falling back to ServerlessBackend")
+        except Exception as e:
+            logger.warning(f"Lakebase unavailable ({e}), falling back to ServerlessBackend")
+
+    warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
+    logger.info(f"Using ServerlessBackend (warehouse: {warehouse_id or 'auto'})")
+    return ServerlessBackend(warehouse_id=warehouse_id)
 
 
 _backend: Optional[DatabaseBackend] = None
