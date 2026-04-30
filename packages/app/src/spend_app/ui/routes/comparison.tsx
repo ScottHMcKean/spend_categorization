@@ -21,31 +21,38 @@ const PIPELINE_STAGES = [
   },
   {
     n: 2,
-    nb: "2_bootstrap",
-    title: "LLM bootstrap labels",
+    nb: "2_index_taxonomies",
+    title: "Index taxonomies",
     description:
-      "three_level uses ai_query with a STRUCT<l1, l2, confidence> response parsed via from_json — single SQL call per row. gl_map uses parallel chat completions through src.llm.chat_with_retry (full-jitter exponential backoff, retry-after honored). Both write into the unified cat_predictions table keyed on (order_id, schema_name, source).",
+      "For every active schema, builds a Lakebase Postgres table with one row per leaf and a precomputed tsvector over its label, parent labels, definitions, and synonyms. A GIN index on tsv makes top-K retrieval fast. This index powers both the retrieval_llm strategy in step 3 and the in-app taxonomy browser.",
   },
   {
     n: 3,
-    nb: "3_train_and_index",
-    title: "Train CatBoost & index for vector search",
+    nb: "3_classify",
+    title: "Classify (per-schema strategy)",
     description:
-      "CatBoost classifier learns from the bootstrap labels and writes back per-row predict_proba as confidence. UNSPSC's 150k commodity codes are indexed in Lakebase Postgres with a tsvector column; classification is OR-token full-text search ranked by ts_rank. pgvector hybrid retrieval is available behind a flag.",
+      "One driver loop dispatches by SchemaSpec.classify_strategy. ai_classify runs hierarchical SQL ai_classify for schemas ≤300 leaves (each level ≤20 candidates per the primitive's cap). retrieval_llm picks tsvector top-K from step 2 and lets an LLM choose the best leaf — used for UNSPSC's 150k codes. tsvector is an optional cheap baseline. All three write to the unified cat_predictions with normalized confidence.",
   },
   {
     n: 4,
-    nb: "4_review",
-    title: "Human + agent review",
+    nb: "4_train_catboost",
+    title: "Train CatBoost (optional)",
     description:
-      "Low-confidence predictions are queued for review. An LLM agent (TaxonomyReviewAgent) walks the active taxonomy with five generic tools — list_root_categories, list_children, search_taxonomy, get_leaf, validate_path — and submits a structured classification via a forced submit_classification tool call. Same code drives the in-app review panel and the offline notebook.",
+      "Trains a CatBoost classifier on whatever's in cat_predictions for the configured training schema/source (default three_level/ai_classify). Writes back per-row predict_proba as confidence. Optional fast-inference layer; pipeline still works without it.",
   },
   {
     n: 5,
-    nb: "5_analytics",
+    nb: "5_review",
+    title: "Human + agent review",
+    description:
+      "Low-confidence predictions are queued for review. The generic TaxonomyReviewAgent walks any schema's level_path tree with five tools (list_root_categories, list_children, search_taxonomy, get_leaf, validate_path) and submits a structured classification via a forced submit tool call. Same code drives the in-app review panel and the offline notebook. Then syncs cat_predictions + taxonomies to Lakebase and creates the writable cat_reviews table.",
+  },
+  {
+    n: 6,
+    nb: "6_analytics",
     title: "Classified spend analytics",
     description:
-      "Categorized spend rolls up into views (vw_spend_by_<schema>) for reporting. The app's /analytics/summary endpoint joins cat_predictions to invoices to produce schema-aware spend-by-L1, spend-by-L2, monthly trend, top suppliers, and a fan-out Sankey on the home page.",
+      "Categorized spend rolls up into one view per schema (vw_spend_by_<schema>) for reporting. With a unified 0–1 confidence column across sources, the views rank across ai_classify / retrieval_llm / catboost / agent_review with a single ORDER BY. The app's /analytics/summary endpoint joins predictions to invoices for schema-aware spend-by-L1/L2, monthly trend, top suppliers, and the home-page Sankey.",
   },
 ];
 
@@ -53,31 +60,31 @@ const SCHEMAS = [
   {
     name: "three_level",
     leaves: "102",
-    method: "ai_query (structured output)",
+    method: "ai_classify (hierarchical)",
     notes:
-      "Internal Direct/Indirect 3-level hierarchy. Single ai_query call per row returns {l1, l2, confidence:1-5} parsed with from_json. Confidence normalized to 0–1.",
+      "Internal Direct/Indirect 3-level hierarchy. SQL ai_classify walks L1 → L2 with each call seeing ≤20 candidates. Deterministic L3 = first leaf under predicted L2.",
   },
   {
     name: "gl_map",
     leaves: "292",
-    method: "ai_classify_chat (parallel)",
+    method: "ai_classify (hierarchical)",
     notes:
-      "GL chart of accounts (1–5 levels). 4 concurrent OpenAI-compatible chat workers with retry/backoff; model returns {code, confidence}. Asset: assets/new_gl_map.xlsx.",
+      "GL chart of accounts (5 levels: nodedesc02 → Level 2..5). Hierarchical ai_classify drills the tree top-down; each level branches ≤20. Asset: assets/new_gl_map.xlsx.",
   },
   {
     name: "unspsc",
     leaves: "~150k",
-    method: "tsvector OR-token + pgvector",
+    method: "retrieval_llm (tsvector top-50 → ai_query)",
     notes:
-      "UN UNSPSC commodity codes. tsvector OR-token query in Lakebase Postgres returns top-K with ts_rank as confidence. pgvector hybrid retrieval available behind run_pgvector flag. Synced to Postgres for app browsing.",
+      "UN UNSPSC commodity codes. Per invoice: tsvector OR-token retrieval pulls top-50 candidates from the Lakebase index, an LLM picks the best one. Way too large for any hierarchical decomposition.",
   },
 ];
 
 const SOURCES = [
-  { source: "ai_classify", schemas: "three_level", confidence: "model self-reported 1–5 (normalized 0–1)" },
-  { source: "ai_classify_chat", schemas: "gl_map", confidence: "model self-reported 1–5 (normalized 0–1)" },
-  { source: "catboost", schemas: "three_level", confidence: "predict_proba.max() per row" },
-  { source: "tsvector", schemas: "unspsc", confidence: "ts_rank (raw)" },
+  { source: "ai_classify", schemas: "three_level + gl_map", confidence: "NULL (agent_review calibrates)" },
+  { source: "retrieval_llm", schemas: "unspsc", confidence: "model self-reported 1–5 (normalized 0–1)" },
+  { source: "catboost", schemas: "three_level (optional)", confidence: "predict_proba.max() per row" },
+  { source: "tsvector", schemas: "any (baseline)", confidence: "margin + strength + coverage blend → 0–1" },
   { source: "agent_review", schemas: "any", confidence: "agent's 1–5 audit score (normalized 0–1)" },
 ];
 
@@ -184,9 +191,9 @@ function Platform() {
       <header>
         <h1 className="text-4xl font-bold text-[#0B2026] mb-3">Walkthrough</h1>
         <p className="text-[#8CA0AC] max-w-3xl leading-relaxed">
-          How this app actually works. Six pipeline notebooks, three pluggable schemas,
-          one unified prediction table, a generic LLM-agent reviewer, and a React app
-          backed by Lakebase Postgres for sub-second reads.
+          How this app actually works. Seven pipeline notebooks, three pluggable schemas,
+          one unified prediction table, a retrieval-augmented LLM strategy for large
+          taxonomies, and a generic agent reviewer that works for any schema depth.
         </p>
       </header>
 

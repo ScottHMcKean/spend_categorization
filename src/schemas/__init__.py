@@ -1,7 +1,11 @@
 """Pluggable classification schemas (taxonomies).
 
-A schema knows how to load its taxonomy. The classification *strategy* is
-chosen by the runner based on the leaf count or via the STRATEGY map below.
+A schema knows how to load its taxonomy AND declares its preferred
+classification strategy via ``SchemaSpec.classify_strategy``. The notebooks
+read the strategy off the spec rather than maintaining a separate dict.
+
+The ``STRATEGY`` mapping is kept as a derived view for backwards
+compatibility with code (and the app) that still imports it.
 """
 
 from __future__ import annotations
@@ -14,20 +18,20 @@ from .three_level import ThreeLevelSchema
 from .unspsc import UNSPSCSchema
 
 
-# Strategy is a property of the *runner*, not the schema. Runners look up
-# their schema's name here. Override at runtime as needed.
-STRATEGY: Dict[str, str] = {
-    "three_level": "ai_query",
-    "gl_map": "ai_query",
-    "unspsc": "pgvector",
-}
-
-
 _DEFAULT_REGISTRY: Dict[str, ClassificationSchema] = {
     "three_level": ThreeLevelSchema(),
     "gl_map": GLMapSchema(),
     "unspsc": UNSPSCSchema(),
 }
+
+
+def _strategy_view() -> Dict[str, str]:
+    return {name: schema.spec.classify_strategy for name, schema in _DEFAULT_REGISTRY.items()}
+
+
+# Module-level alias kept for back-compat. The schema-spec field is the
+# source of truth — mutating this dict has no effect on runtime behavior.
+STRATEGY: Dict[str, str] = _strategy_view()
 
 
 def list_schemas() -> List[ClassificationSchema]:
@@ -40,9 +44,15 @@ def get_schema(name: str) -> ClassificationSchema:
     return _DEFAULT_REGISTRY[name]
 
 
-def register_schema(schema: ClassificationSchema, strategy: str = "ai_classify") -> None:
+def register_schema(schema: ClassificationSchema, strategy: str | None = None) -> None:
+    """Register a schema. If ``strategy`` is provided it overrides the
+    schema's spec; otherwise the spec's ``classify_strategy`` is used."""
+    if strategy is not None:
+        # Replace the spec with one carrying the override.
+        from dataclasses import replace
+        schema.spec = replace(schema.spec, classify_strategy=strategy)
     _DEFAULT_REGISTRY[schema.name] = schema
-    STRATEGY[schema.name] = strategy
+    STRATEGY[schema.name] = schema.spec.classify_strategy
 
 
 __all__ = [

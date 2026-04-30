@@ -17,6 +17,8 @@ def default_spec() -> SchemaSpec:
         label_column="Commodity Title",
         level_columns=["Segment Title", "Family Title", "Class Title", "Commodity Title"],
         description_columns=["Commodity Definition", "Class Definition", "Synonym"],
+        classify_strategy="retrieval_llm",
+        retrieval_top_k=50,
     )
 
 

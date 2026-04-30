@@ -17,6 +17,7 @@ def default_spec() -> SchemaSpec:
         label_column="objval_desc",
         level_columns=["nodedesc02", "Level 2", "Level 3", "Level 4", "Level 5"],
         description_columns=[],
+        classify_strategy="ai_classify",
     )
 
 

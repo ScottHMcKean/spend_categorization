@@ -22,12 +22,16 @@ resources:
           default: "0.6"
         - name: review_sample_size
           default: "20"
+        - name: train_schema
+          default: "three_level"
+        - name: train_source
+          default: "ai_classify"
         - name: run_catboost
           default: "true"
-        - name: run_pgvector
-          default: "false"   # 150k UNSPSC embedding step is the priciest -- enable on demand
-        - name: unspsc_sample
-          default: "50"
+        - name: also_run_tsvector
+          default: "false"
+        - name: limit_rows
+          default: "0"
 
       tasks:
         - task_key: define_taxonomies
@@ -53,36 +57,51 @@ resources:
             source: WORKSPACE
           environment_key: default
 
-        - task_key: bootstrap
+        - task_key: index_taxonomies
           depends_on:
-            - task_key: ingest
+            - task_key: define_taxonomies
           notebook_task:
-            notebook_path: ../notebooks/2_bootstrap.ipynb
+            notebook_path: ../notebooks/2_index_taxonomies.ipynb
             base_parameters:
               catalog: "{{job.parameters.catalog}}"
               schema: "{{job.parameters.schema}}"
             source: WORKSPACE
           environment_key: default
 
-        - task_key: train_and_index
+        - task_key: classify
           depends_on:
-            - task_key: bootstrap
+            - task_key: ingest
+            - task_key: index_taxonomies
           notebook_task:
-            notebook_path: ../notebooks/3_train_and_index.ipynb
+            notebook_path: ../notebooks/3_classify.ipynb
             base_parameters:
               catalog: "{{job.parameters.catalog}}"
               schema: "{{job.parameters.schema}}"
+              llm_endpoint: "{{job.parameters.llm_endpoint}}"
+              limit_rows: "{{job.parameters.limit_rows}}"
+              also_run_tsvector: "{{job.parameters.also_run_tsvector}}"
+            source: WORKSPACE
+          environment_key: default
+
+        - task_key: train_catboost
+          depends_on:
+            - task_key: classify
+          notebook_task:
+            notebook_path: ../notebooks/4_train_catboost.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              train_schema: "{{job.parameters.train_schema}}"
+              train_source: "{{job.parameters.train_source}}"
               run_catboost: "{{job.parameters.run_catboost}}"
-              run_pgvector: "{{job.parameters.run_pgvector}}"
-              unspsc_sample: "{{job.parameters.unspsc_sample}}"
             source: WORKSPACE
           environment_key: default
 
         - task_key: review
           depends_on:
-            - task_key: train_and_index
+            - task_key: train_catboost
           notebook_task:
-            notebook_path: ../notebooks/4_review.ipynb
+            notebook_path: ../notebooks/5_review.ipynb
             base_parameters:
               catalog: "{{job.parameters.catalog}}"
               schema: "{{job.parameters.schema}}"
@@ -98,7 +117,7 @@ resources:
           depends_on:
             - task_key: review
           notebook_task:
-            notebook_path: ../notebooks/5_analytics.ipynb
+            notebook_path: ../notebooks/6_analytics.ipynb
             base_parameters:
               catalog: "{{job.parameters.catalog}}"
               schema: "{{job.parameters.schema}}"

@@ -1,6 +1,6 @@
 [project]
 name = "spend-categorization"
-version = "0.2.6"
+version = "0.3.1"
 description = "Invoice spend classification with Databricks"
 readme = "README.md"
 requires-python = ">=3.10"
