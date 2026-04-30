@@ -317,9 +317,9 @@ function Index() {
             </Link>
             <Link to="/comparison">
               <div className="bg-white rounded-lg border border-[#E5EBF0] p-6 hover:border-[#FF3621] transition-colors cursor-pointer">
-                <h3 className="font-semibold text-[#0B2026] mb-2">Platform</h3>
+                <h3 className="font-semibold text-[#0B2026] mb-2">Walkthrough</h3>
                 <p className="text-sm text-[#8CA0AC]">
-                  Why Databricks and future roadmap
+                  Architecture, pipeline stages, and how each schema is classified
                 </p>
               </div>
             </Link>

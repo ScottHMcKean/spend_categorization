@@ -182,7 +182,7 @@ function Platform() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-8 font-sans space-y-16">
       <header>
-        <h1 className="text-4xl font-bold text-[#0B2026] mb-3">Platform</h1>
+        <h1 className="text-4xl font-bold text-[#0B2026] mb-3">Walkthrough</h1>
         <p className="text-[#8CA0AC] max-w-3xl leading-relaxed">
           How this app actually works. Six pipeline notebooks, three pluggable schemas,
           one unified prediction table, a generic LLM-agent reviewer, and a React app

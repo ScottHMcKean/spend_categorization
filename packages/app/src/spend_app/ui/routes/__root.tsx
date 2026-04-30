@@ -10,7 +10,7 @@ const navLinks = [
   { to: "/classifications", label: "Classifications" },
   { to: "/review", label: "Spend Review" },
   { to: "/analytics", label: "Analytics" },
-  { to: "/comparison", label: "Platform" },
+  { to: "/comparison", label: "Walkthrough" },
 ] as const;
 
 function RootLayout() {

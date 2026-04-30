@@ -233,6 +233,18 @@ async def get_schema_taxonomy(request: Request, schema_name: str, limit: int = 1
 # ---------------------------------------------------------------------------
 
 @router.get(
+    "/predictions/{schema_name}/summary",
+    response_model=dict,
+    operation_id="getPredictionsSummaryByPath",
+)
+async def get_predictions_summary_path(request: Request, schema_name: str) -> dict:
+    """Confidence + source distribution for a schema. Registered before
+    the ``/{schema_name}/{order_id}`` route so 'summary' isn't treated
+    as an order_id."""
+    return await _predictions_summary(request, schema_name)
+
+
+@router.get(
     "/predictions/{schema_name}",
     response_model=list[dict],
     operation_id="getPredictions",
@@ -284,14 +296,8 @@ async def get_invoice_predictions(request: Request, order_id: str) -> dict:
     return out
 
 
-@router.get(
-    "/predictions/{schema_name}/summary",
-    response_model=dict,
-    operation_id="getPredictionsSummary",
-)
-async def get_predictions_summary(request: Request, schema_name: str) -> dict:
-    """Confidence + source distribution for a schema. Used by the
-    Classifications page header."""
+async def _predictions_summary(request: Request, schema_name: str) -> dict:
+    """Shared helper for the two summary route variants."""
     df = _predictions(request, schema_name)
     if df.empty:
         return {"total": 0, "sources": []}
@@ -602,30 +608,40 @@ async def _run_agent_review_impl(
 # ---------------------------------------------------------------------------
 
 @router.get("/analytics/summary", response_model=AnalyticsSummary, operation_id="getAnalyticsSummary")
-async def analytics_summary(request: Request, schema_name: str | None = None) -> AnalyticsSummary:
+async def analytics_summary(
+    request: Request,
+    schema_name: str | None = None,
+    l1_filter: str | None = None,
+) -> AnalyticsSummary:
+    """All metrics are computed against invoices that have a prediction in
+    the active schema (so flipping the schema in the dropdown updates total
+    spend, invoice count, suppliers, monthly trend, top suppliers, and the
+    region × category heatmap — not just the treemap). An optional
+    ``l1_filter`` further restricts every metric to that L1 category.
+    """
     cfg = request.app.state.project_config
     c = cfg.col
     data = request.app.state.data
-    invoices = data.get("invoices", pd.DataFrame())
+    invoices_full = data.get("invoices", pd.DataFrame())
     reviews = data.get("cat_reviews", pd.DataFrame())
     preds = _predictions(request, schema_name)
-
-    total_spend = float(invoices[c.amount].sum()) if not invoices.empty and _safe_col(invoices, c.amount) else 0
-    supplier_count = int(invoices[c.supplier].nunique()) if not invoices.empty and _safe_col(invoices, c.supplier) else 0
 
     predictions_by_source: list[dict[str, Any]] = []
     if not preds.empty and "source" in preds.columns:
         g = preds.groupby("source").size().reset_index(name="count")
         predictions_by_source = g.to_dict(orient="records")
 
-    # Spend by predicted level_path[0] / level_path[1] for the ACTIVE schema.
-    # Falls back to invoice ground-truth columns only when no predictions exist
-    # (i.e. before any pipeline has run).
-    spend_by_l1: list[dict[str, Any]] = []
-    spend_by_l2: list[dict[str, Any]] = []
-    if not preds.empty and not invoices.empty and _safe_col(invoices, c.amount):
-        # One prediction per (order_id, source). Pick the highest-confidence
-        # source (ties broken by recency) so each invoice contributes once.
+    def _l(path: Any, idx: int) -> str | None:
+        if isinstance(path, list) and len(path) > idx and path[idx]:
+            return str(path[idx])
+        return None
+
+    # Build a single per-invoice frame: one row per order_id with the
+    # highest-confidence prediction for the active schema attached. Every
+    # downstream metric is derived from this frame so they all stay in
+    # sync when the schema dropdown changes.
+    base = pd.DataFrame()
+    if not invoices_full.empty and not preds.empty and _safe_col(invoices_full, c.amount):
         p = preds.copy()
         if "confidence" in p.columns:
             p["_conf"] = pd.to_numeric(p["confidence"], errors="coerce").fillna(0)
@@ -636,61 +652,122 @@ async def analytics_summary(request: Request, schema_name: str | None = None) ->
         else:
             p = p.sort_values(["order_id", "_conf"], ascending=[True, False])
         p = p.drop_duplicates(subset=["order_id"], keep="first")
-
-        def _l(path: Any, idx: int) -> str | None:
-            if isinstance(path, list) and len(path) > idx and path[idx]:
-                return str(path[idx])
-            return None
-
         p["_l1"] = p["level_path"].apply(lambda x: _l(x, 0))
         p["_l2"] = p["level_path"].apply(lambda x: _l(x, 1))
-        merged = invoices[[c.id, c.amount]].rename(columns={c.id: "order_id", c.amount: "_amount"}).merge(
-            p[["order_id", "_l1", "_l2"]], on="order_id", how="inner"
-        )
 
-        if "_l1" in merged.columns:
-            g = merged.dropna(subset=["_l1"]).groupby("_l1")["_amount"].sum().reset_index()
+        keep_cols = [c.id, c.amount]
+        for opt in (c.supplier, c.date, c.region, c.category_l1):
+            if _safe_col(invoices_full, opt) and opt not in keep_cols:
+                keep_cols.append(opt)
+        inv_subset = invoices_full[keep_cols].rename(columns={c.id: "order_id", c.amount: "_amount"})
+        base = inv_subset.merge(p[["order_id", "_l1", "_l2"]], on="order_id", how="inner")
+        if l1_filter:
+            base = base[base["_l1"] == l1_filter]
+
+    if base.empty:
+        # Pre-pipeline fallback: nothing predicted for this schema yet.
+        # Show the unfiltered invoice totals so the page isn't blank.
+        total_spend = (
+            float(invoices_full[c.amount].sum())
+            if not invoices_full.empty and _safe_col(invoices_full, c.amount) else 0
+        )
+        supplier_count = (
+            int(invoices_full[c.supplier].nunique())
+            if not invoices_full.empty and _safe_col(invoices_full, c.supplier) else 0
+        )
+        invoice_count = len(invoices_full)
+
+        spend_by_l1: list[dict[str, Any]] = []
+        spend_by_l2: list[dict[str, Any]] = []
+        if not invoices_full.empty and _safe_col(invoices_full, c.category_l1) and _safe_col(invoices_full, c.amount):
+            g = invoices_full.groupby(c.category_l1)[c.amount].sum().reset_index()
             g.columns = ["category_level_1", "total"]
             spend_by_l1 = g.sort_values("total", ascending=False).to_dict(orient="records")
-        if "_l2" in merged.columns:
-            g = merged.dropna(subset=["_l1", "_l2"]).groupby(["_l1", "_l2"])["_amount"].sum().reset_index()
+        if not invoices_full.empty and _safe_col(invoices_full, c.category_l2) and _safe_col(invoices_full, c.amount):
+            g = invoices_full.groupby([c.category_l1, c.category_l2])[c.amount].sum().reset_index()
             g.columns = ["category_level_1", "category_level_2", "total"]
             spend_by_l2 = g.sort_values("total", ascending=False).head(20).to_dict(orient="records")
 
-    # Final fallback: ground-truth invoice categories (only relevant for three_level demos).
-    if not spend_by_l1 and not invoices.empty and _safe_col(invoices, c.category_l1) and _safe_col(invoices, c.amount):
-        g = invoices.groupby(c.category_l1)[c.amount].sum().reset_index()
-        g.columns = ["category_level_1", "total"]
-        spend_by_l1 = g.sort_values("total", ascending=False).to_dict(orient="records")
-    if not spend_by_l2 and not invoices.empty and _safe_col(invoices, c.category_l2) and _safe_col(invoices, c.amount):
-        g = invoices.groupby([c.category_l1, c.category_l2])[c.amount].sum().reset_index()
-        g.columns = ["category_level_1", "category_level_2", "total"]
-        spend_by_l2 = g.sort_values("total", ascending=False).head(20).to_dict(orient="records")
+        monthly_trend: list[dict[str, Any]] = []
+        if not invoices_full.empty and _safe_col(invoices_full, c.date) and _safe_col(invoices_full, c.amount):
+            tmp = invoices_full.copy()
+            tmp[c.date] = pd.to_datetime(tmp[c.date], errors="coerce")
+            tmp["month"] = tmp[c.date].dt.to_period("M").astype(str)
+            g = tmp.groupby("month")[c.amount].sum().reset_index()
+            g.columns = ["month", "total"]
+            monthly_trend = g.to_dict(orient="records")
+
+        top_suppliers: list[dict[str, Any]] = []
+        if not invoices_full.empty and _safe_col(invoices_full, c.supplier) and _safe_col(invoices_full, c.amount):
+            g = invoices_full.groupby(c.supplier)[c.amount].sum().nlargest(15).reset_index()
+            g.columns = ["supplier", "total"]
+            top_suppliers = g.to_dict(orient="records")
+
+        region_category: list[dict[str, Any]] = []
+        if not invoices_full.empty and _safe_col(invoices_full, c.region) and _safe_col(invoices_full, c.category_l1) and _safe_col(invoices_full, c.amount):
+            g = invoices_full.groupby([c.region, c.category_l1])[c.amount].sum().reset_index()
+            g.columns = ["region", "category_level_1", "total"]
+            region_category = g.to_dict(orient="records")
+
+        return AnalyticsSummary(
+            total_spend=total_spend,
+            invoice_count=invoice_count,
+            supplier_count=supplier_count,
+            prediction_count=len(preds),
+            review_count=len(reviews),
+            predictions_by_source=predictions_by_source,
+            spend_by_l1=spend_by_l1,
+            spend_by_l2=spend_by_l2,
+            monthly_trend=monthly_trend,
+            top_suppliers=top_suppliers,
+            region_category=region_category,
+        )
+
+    # Schema-aware aggregations from the joined frame.
+    base["_amount"] = pd.to_numeric(base["_amount"], errors="coerce").fillna(0)
+
+    total_spend = float(base["_amount"].sum())
+    invoice_count = int(base["order_id"].nunique())
+    supplier_count = (
+        int(base[c.supplier].nunique()) if c.supplier in base.columns else 0
+    )
+
+    spend_by_l1: list[dict[str, Any]] = []
+    spend_by_l2: list[dict[str, Any]] = []
+    g = base.dropna(subset=["_l1"]).groupby("_l1")["_amount"].sum().reset_index()
+    g.columns = ["category_level_1", "total"]
+    spend_by_l1 = g.sort_values("total", ascending=False).to_dict(orient="records")
+    g2 = base.dropna(subset=["_l1", "_l2"]).groupby(["_l1", "_l2"])["_amount"].sum().reset_index()
+    g2.columns = ["category_level_1", "category_level_2", "total"]
+    spend_by_l2 = g2.sort_values("total", ascending=False).head(20).to_dict(orient="records")
 
     monthly_trend: list[dict[str, Any]] = []
-    if not invoices.empty and _safe_col(invoices, c.date) and _safe_col(invoices, c.amount):
-        tmp = invoices.copy()
+    if c.date in base.columns:
+        tmp = base.copy()
         tmp[c.date] = pd.to_datetime(tmp[c.date], errors="coerce")
         tmp["month"] = tmp[c.date].dt.to_period("M").astype(str)
-        g = tmp.groupby("month")[c.amount].sum().reset_index()
+        g = tmp.groupby("month")["_amount"].sum().reset_index()
         g.columns = ["month", "total"]
         monthly_trend = g.to_dict(orient="records")
 
     top_suppliers: list[dict[str, Any]] = []
-    if not invoices.empty and _safe_col(invoices, c.supplier) and _safe_col(invoices, c.amount):
-        g = invoices.groupby(c.supplier)[c.amount].sum().nlargest(15).reset_index()
+    if c.supplier in base.columns:
+        g = base.groupby(c.supplier)["_amount"].sum().nlargest(15).reset_index()
         g.columns = ["supplier", "total"]
         top_suppliers = g.to_dict(orient="records")
 
     region_category: list[dict[str, Any]] = []
-    if not invoices.empty and _safe_col(invoices, c.region) and _safe_col(invoices, c.category_l1) and _safe_col(invoices, c.amount):
-        g = invoices.groupby([c.region, c.category_l1])[c.amount].sum().reset_index()
+    if c.region in base.columns:
+        g = (
+            base.dropna(subset=["_l1"])
+            .groupby([c.region, "_l1"])["_amount"].sum().reset_index()
+        )
         g.columns = ["region", "category_level_1", "total"]
         region_category = g.to_dict(orient="records")
 
     return AnalyticsSummary(
         total_spend=total_spend,
-        invoice_count=len(invoices),
+        invoice_count=invoice_count,
         supplier_count=supplier_count,
         prediction_count=len(preds),
         review_count=len(reviews),

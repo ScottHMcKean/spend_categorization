@@ -1926,7 +1926,7 @@ dev = [{ name = "ty", specifier = ">=0.0.12" }]
 
 [[package]]
 name = "spend-categorization"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "." }
 dependencies = [
     { name = "databricks-sdk" },

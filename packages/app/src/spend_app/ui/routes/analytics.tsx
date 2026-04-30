@@ -3,7 +3,7 @@ import { SchemaBadge } from "@/components/apx/schema-selector";
 import { useSchema } from "@/lib/schema-context";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Plot from "react-plotly.js";
 
 export const Route = createFileRoute("/analytics")({
@@ -24,9 +24,22 @@ interface AnalyticsSummary {
   region_category: Record<string, unknown>[];
 }
 
-function useAnalyticsSummary(schemaName: string) {
+function useAnalyticsSummary(schemaName: string, l1Filter: string) {
   return useQuery({
-    queryKey: ["analytics", "summary", schemaName],
+    queryKey: ["analytics", "summary", schemaName, l1Filter || "all"],
+    queryFn: () => {
+      const qs = new URLSearchParams({ schema_name: schemaName });
+      if (l1Filter) qs.set("l1_filter", l1Filter);
+      return apiFetch<AnalyticsSummary>(`/analytics/summary?${qs.toString()}`);
+    },
+  });
+}
+
+function useL1Options(schemaName: string) {
+  // Fetch the unfiltered summary just to populate the L1 dropdown so
+  // selecting an L1 doesn't shrink the available options.
+  return useQuery({
+    queryKey: ["analytics", "summary", schemaName, "all"],
     queryFn: () =>
       apiFetch<AnalyticsSummary>(`/analytics/summary?schema_name=${encodeURIComponent(schemaName)}`),
   });
@@ -36,11 +49,18 @@ function Analytics() {
   const { schemaName } = useSchema();
   const [l1Filter, setL1Filter] = useState<string>("");
 
-  const { data: summary, isLoading } = useAnalyticsSummary(schemaName);
+  // Reset the L1 filter when the schema changes — stale L1s from another
+  // taxonomy would zero-out every metric.
+  useEffect(() => {
+    setL1Filter("");
+  }, [schemaName]);
+
+  const { data: summary, isLoading } = useAnalyticsSummary(schemaName, l1Filter);
+  const { data: optionsSummary } = useL1Options(schemaName);
 
   const l1Options = Array.from(
     new Set(
-      (summary?.spend_by_l1 ?? [])
+      (optionsSummary?.spend_by_l1 ?? [])
         .map((s) => String(s.category_level_1 ?? ""))
         .filter(Boolean)
     )
