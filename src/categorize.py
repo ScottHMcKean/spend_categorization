@@ -295,6 +295,28 @@ def classify_retrieval_llm(
     done = [0]
     misses = [0]
 
+    # Thread-local connection pool: ThreadPoolExecutor reuses worker
+    # threads, so each worker holds onto one psycopg2 connection across
+    # rows instead of opening a new one per invoice. Cuts retrieval
+    # overhead from ~1s/row of connection setup to ~0.
+    _local = threading.local()
+
+    def _get_pg_conn():
+        conn = getattr(_local, "conn", None)
+        if conn is not None:
+            try:
+                with conn.cursor() as c:
+                    c.execute("SELECT 1")
+                return conn
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                _local.conn = None
+        _local.conn = pg_connect()
+        return _local.conn
+
     def _classify_one(row) -> Optional[dict]:
         tsq, n_tokens = or_tsquery(row["qtext"])
         if not tsq:
@@ -302,15 +324,19 @@ def classify_retrieval_llm(
                 misses[0] += 1
             return None
 
-        with pg_connect() as conn, conn.cursor() as cur:
-            try:
+        try:
+            conn = _get_pg_conn()
+            with conn.cursor() as cur:
                 cur.execute(topk_sql, (tsq,))
                 hits = cur.fetchall()
-            except Exception:
+        except Exception:
+            try:
                 conn.rollback()
-                with lock:
-                    misses[0] += 1
-                return None
+            except Exception:
+                pass
+            with lock:
+                misses[0] += 1
+            return None
 
         if not hits:
             with lock:
