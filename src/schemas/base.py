@@ -34,7 +34,21 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class SchemaSpec:
-    """Declarative metadata for a schema."""
+    """Declarative metadata for a schema.
+
+    Strategy fields (``classify_strategy``, ``retrieval_top_k``) are the
+    *one* place a new schema declares how it should be classified. The
+    notebooks read this off the spec rather than maintaining a separate
+    STRATEGY map.
+
+    Strategies:
+      * ``ai_classify`` (default, ≤300 leaves) — hierarchical SQL
+        ``ai_classify`` walks ``level_columns`` step by step (each
+        level ≤ 20 candidates to respect the primitive's cap).
+      * ``retrieval_llm`` (>300 leaves) — tsvector top-K candidates
+        feed an ``ai_query`` STRUCT prompt; the model picks the best.
+      * ``tsvector`` — top-1 from the index, no LLM. Cheap baseline.
+    """
 
     name: str
     display_name: str
@@ -44,6 +58,8 @@ class SchemaSpec:
     label_column: str = "label"
     level_columns: List[str] = field(default_factory=list)
     description_columns: List[str] = field(default_factory=list)
+    classify_strategy: str = "ai_classify"
+    retrieval_top_k: int = 50
 
 
 class ClassificationSchema(ABC):
