@@ -83,9 +83,11 @@ def replace_examples(conn, pg_schema: str, schema_name: str, rows: list[dict],
 def search(conn, pg_schema: str, schema_name: str, embedding: list[float], k: int) -> list[dict]:
     """Return the `k` nearest examples for one schema, closest first.
 
-    Ground-truth examples are preferred over taxonomy rows at equal
-    distance, so real labelled invoices win once they exist.
+    Ordered purely by cosine distance so the HNSW index is used. Ground-truth
+    examples win when they are genuinely closest (they usually are once they
+    exist) rather than being forced ahead of closer taxonomy leaves.
     """
+    vec = _vec(embedding)
     with conn.cursor() as cur:
         cur.execute(
             f'''
@@ -93,10 +95,10 @@ def search(conn, pg_schema: str, schema_name: str, embedding: list[float], k: in
                    embedding <=> %s::vector AS distance
             FROM "{pg_schema}".examples
             WHERE schema_name = %s
-            ORDER BY (kind = 'ground_truth') DESC, distance ASC
+            ORDER BY embedding <=> %s::vector ASC
             LIMIT %s
             ''',
-            (_vec(embedding), schema_name, k),
+            (vec, schema_name, vec, k),
         )
         return [
             {"code": r[0], "label": r[1], "level_path": list(r[2] or []),

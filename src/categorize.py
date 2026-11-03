@@ -282,8 +282,13 @@ def _classify_one_llm(mlflow, conn, schema, order_id, text, vector,
 
 
 def _candidate_structs(candidates: list[dict]) -> list[dict]:
-    """Shrink retrieved candidates to the {code,label,score} we persist."""
-    return [{"code": c["code"], "label": c["label"], "score": round(1.0 - c["distance"], 4)}
+    """Shrink retrieved candidates to the {code,label,score} we persist.
+
+    `score` is a 0-1 similarity from cosine distance (`<=>`, range 0-2),
+    clamped so it never goes negative for far-apart vectors.
+    """
+    return [{"code": c["code"], "label": c["label"],
+             "score": round(max(0.0, 1.0 - c["distance"] / 2.0), 4)}
             for c in candidates]
 
 
@@ -328,6 +333,11 @@ def train_catboost(
     if len(labelled) < min_rows:
         print(f"catboost: only {len(labelled)} ground-truth rows for {schema.name} "
               f"(need {min_rows}); skipping.")
+        return 0
+
+    if labelled["code"].nunique() < 2:
+        print(f"catboost: ground truth for {schema.name} has <2 distinct codes; "
+              f"nothing to learn, skipping.")
         return 0
 
     labelled["text"] = [invoice_text(r.supplier, r.description, r.cost_centre)

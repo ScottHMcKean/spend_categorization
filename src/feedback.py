@@ -91,10 +91,12 @@ def import_ground_truth(
         code = str(r.code)
         label = getattr(r, "label", None)
         level_path = getattr(r, "level_path", None)
-        if label is None or level_path is None:
-            tax_label, tax_path = lookup.get(code, (code, []))
-            label = label or tax_label
-            level_path = level_path if level_path is not None else tax_path
+        tax_label, tax_path = lookup.get(code, (code, []))
+        # Treat missing OR NaN (float != itself) as "fill from taxonomy".
+        if label is None or (isinstance(label, float) and label != label):
+            label = tax_label
+        if level_path is None:
+            level_path = tax_path
         rows.append({
             "order_id": str(r.order_id), "schema_name": schema_name,
             "code": code, "label": label, "level_path": _to_list(level_path),
