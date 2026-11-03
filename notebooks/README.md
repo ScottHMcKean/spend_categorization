@@ -21,7 +21,14 @@ full design and `../DATA_FLOW.md` for the tables.
                             ground_truth, predict every invoice (optional)
                             │
 5_analytics           ──►  vw_spend_by_<schema> views
+                            │
+6_evaluate            ──►  scorecard: coverage + accuracy vs ground_truth,
+                            and the reason breakdown (the tuning signal)
 ```
+
+`7_tune.ipynb` is a **standalone** notebook (not in the scheduled job): it
+grid-searches `top_k` against ground truth and recommends the best value.
+See `../docs/TUNING.md` for the full tuning playbook and the feedback loop.
 
 There is **one classifier design** for every schema: an LLM grounded by
 pgvector retrieval, plus optional CatBoost. No per-schema strategy to pick.

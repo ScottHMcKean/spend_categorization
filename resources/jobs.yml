@@ -97,6 +97,17 @@ resources:
             source: WORKSPACE
           environment_key: default
 
+        - task_key: evaluate
+          depends_on:
+            - task_key: analytics
+          notebook_task:
+            notebook_path: ../notebooks/6_evaluate.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+            source: WORKSPACE
+          environment_key: default
+
       environments:
         - environment_key: default
           spec:
