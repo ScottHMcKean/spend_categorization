@@ -10,28 +10,18 @@ resources:
           default: ${var.schema}
         - name: llm_endpoint
           default: ${var.llm_endpoint}
+        - name: embed_endpoint
+          default: "databricks-gte-large-en"
         - name: batch_size
           default: "1000"
         - name: max_batches
           default: "100"
-        - name: review_schema
-          default: "three_level"
-        - name: review_source
-          default: "ai_classify"
-        - name: low_confidence_threshold
-          default: "0.6"
-        - name: review_sample_size
-          default: "20"
-        - name: train_schema
-          default: "three_level"
-        - name: train_source
-          default: "ai_classify"
-        - name: run_catboost
-          default: "true"
-        - name: also_run_tsvector
-          default: "false"
         - name: limit_rows
           default: "0"
+        - name: run_catboost
+          default: "true"
+        - name: min_rows
+          default: "50"
 
       tasks:
         - task_key: define_taxonomies
@@ -57,29 +47,29 @@ resources:
             source: WORKSPACE
           environment_key: default
 
-        - task_key: index_taxonomies
+        - task_key: embed
           depends_on:
-            - task_key: define_taxonomies
+            - task_key: ingest
           notebook_task:
-            notebook_path: ../notebooks/2_index_taxonomies.ipynb
+            notebook_path: ../notebooks/2_embed.ipynb
             base_parameters:
               catalog: "{{job.parameters.catalog}}"
               schema: "{{job.parameters.schema}}"
+              embed_endpoint: "{{job.parameters.embed_endpoint}}"
             source: WORKSPACE
           environment_key: default
 
         - task_key: classify
           depends_on:
-            - task_key: ingest
-            - task_key: index_taxonomies
+            - task_key: embed
           notebook_task:
             notebook_path: ../notebooks/3_classify.ipynb
             base_parameters:
               catalog: "{{job.parameters.catalog}}"
               schema: "{{job.parameters.schema}}"
               llm_endpoint: "{{job.parameters.llm_endpoint}}"
+              embed_endpoint: "{{job.parameters.embed_endpoint}}"
               limit_rows: "{{job.parameters.limit_rows}}"
-              also_run_tsvector: "{{job.parameters.also_run_tsvector}}"
             source: WORKSPACE
           environment_key: default
 
@@ -91,33 +81,16 @@ resources:
             base_parameters:
               catalog: "{{job.parameters.catalog}}"
               schema: "{{job.parameters.schema}}"
-              train_schema: "{{job.parameters.train_schema}}"
-              train_source: "{{job.parameters.train_source}}"
               run_catboost: "{{job.parameters.run_catboost}}"
-            source: WORKSPACE
-          environment_key: default
-
-        - task_key: review
-          depends_on:
-            - task_key: train_catboost
-          notebook_task:
-            notebook_path: ../notebooks/5_review.ipynb
-            base_parameters:
-              catalog: "{{job.parameters.catalog}}"
-              schema: "{{job.parameters.schema}}"
-              llm_endpoint: "{{job.parameters.llm_endpoint}}"
-              review_schema: "{{job.parameters.review_schema}}"
-              review_source: "{{job.parameters.review_source}}"
-              low_confidence_threshold: "{{job.parameters.low_confidence_threshold}}"
-              sample_size: "{{job.parameters.review_sample_size}}"
+              min_rows: "{{job.parameters.min_rows}}"
             source: WORKSPACE
           environment_key: default
 
         - task_key: analytics
           depends_on:
-            - task_key: review
+            - task_key: train_catboost
           notebook_task:
-            notebook_path: ../notebooks/6_analytics.ipynb
+            notebook_path: ../notebooks/5_analytics.ipynb
             base_parameters:
               catalog: "{{job.parameters.catalog}}"
               schema: "{{job.parameters.schema}}"
@@ -132,8 +105,7 @@ resources:
               - pyyaml
               - openai
               - openpyxl
+              - mlflow
               - catboost
-              - scikit-learn
-              - pgvector
               - psycopg2-binary
               - "databricks-sdk>=0.50.0"

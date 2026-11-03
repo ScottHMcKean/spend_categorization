@@ -1,142 +1,86 @@
-# Spend Categorization Data Flow
+# Spend Categorization — Data Flow
 
-## Overview
+> This is the reference for the tables and how data moves between them.
+> The authoritative design (rationale, classifiers, feedback loop, tracing)
+> lives in [`docs/DESIGN.md`](docs/DESIGN.md). When the two disagree, fix one
+> in the same change.
 
-This solution provides a complete pipeline for automated spend categorization using multiple ML approaches with a continuous feedback loop.
-
-## Data Flow
+## The model in one picture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────┐
-│  invoices   │     │  categories  │     │ prompts  │
-│             │     │  (hierarchy) │     │(versioned)│
-└──────┬──────┘     └──────┬───────┘     └────┬─────┘
-       │                   │                   │
-       │                   └────────┬──────────┘
-       │                            │
-       └────────────────┬───────────┘
-                        │
-                        ▼
-                ┌─────────────────┐
-                │  cat_bootstrap  │  ← LLM-based categorization (Claude/GPT)
-                └──────┬──────────┘  source: bootstrap
-                       │
-                       ▼
-                ┌──────────────┐
-                │ cat_reviews  │  ← Human reviews (append-only)
-                └──────┬───────┘  Training data for models
-                       │
-                       ├────────────────────┐
-                       │                    │
-                       ▼                    ▼
-              ┌──────────────┐      ┌──────────────────┐
-              │ cat_catboost │      │ cat_vectorsearch │
-              └──────┬───────┘      └──────┬───────────┘
-              source: catboost      source: vectorsearch
-              Trained on reviews    Trained on reviews
-                     │                     │
-                     └──────────┬──────────┘
-                                │
-                                ▼
-                         ┌──────────────┐
-                         │ cat_reviews  │  ← Feedback loop
-                         └──────────────┘  Continuous improvement
+ invoices ───embed──► pgvector (taxonomies + ground-truth examples)
+    │                        ▲  retrieve similar examples
+    │                        │
+    ├──► LLM + pgvector ──────┐
+    │                         ├──► predictions (source='llm' | 'catboost')
+    └──► CatBoost ────────────┘        │
+         (trained on ground_truth)     │ surfaced in app
+                                        ▼
+                                     reviews  (append-only audit log)
+                                        │  approve / correct
+                                        ▼
+                                   ground_truth  (accepted label)
+                                        │
+                                        └──► trains CatBoost + seeds pgvector examples
+                                             (loop back to the top)
 ```
+
+Unity Catalog Delta is the system of record. pgvector (Lakebase Postgres) is
+the serving + retrieval index — a mirror, never the source of truth. All LLM
+and embedding calls go through **Unity Gateway**.
 
 ## Tables
 
-### Core Tables
+| Table | Grain | Written by | Role |
+|-------|-------|-----------|------|
+| `invoices` | one invoice/order line | ingest (nb 1) | The spend. |
+| `<name>_taxonomy` | one leaf | nb 0 | A category tree (one per schema). |
+| `schema_registry` | one schema | nb 0 | Taxonomy metadata that drives the app dropdown. |
+| `predictions` | `(order_id, schema_name, source)` | classify (nb 3), train_catboost (nb 4) | Machine predictions, `source ∈ {llm, catboost}`. |
+| `reviews` | one review event | app | Append-only audit log of human actions. |
+| `ground_truth` | `(order_id, schema_name)` | bulk import + app | Current accepted label; CatBoost training set + LLM example source. |
 
-1. **`invoices`** - Main invoices table
-   - Generated in `0_generate.ipynb`
-   - Contains: order_id, date, description, supplier, amount, actual categories
+### `predictions`
+`order_id, schema_name, source, code, label, level_path, confidence,
+status, reason, rationale, candidates[], model_version, trace_id,
+classified_at`.
 
-2. **`categories`** - Category hierarchy
-   - Loaded from `assets/categories.csv`
-   - 3-level hierarchy: Level 1 (Direct/Indirect/Non-Procureable) → Level 2 → Level 3
-   - Versioned in `categories_str` table (change detection via hash)
+- `status` is `classified` or `unclassified`; `reason` explains why
+  (`ok`, `low_confidence`, `no_candidates`, `parse_error`, `llm_error`,
+  `out_of_taxonomy`) so an unclassified row is self-explaining.
+- `rationale` is the model's short reasoning; `trace_id` deep-links to the
+  MLflow trace for the full "thinking."
 
-3. **`prompts`** - Categorization prompt versions
-   - Stores LLM prompts used for bootstrap categorization
-   - Enables prompt versioning and tracking
-   - Append-only, only saves when prompt changes
-   - Used by cat_bootstrap for LLM categorization
+### `reviews`
+`review_id, order_id, schema_name, reviewed_source, action, code, label,
+level_path, reviewer, comment, created_at`. Append-only — never updated or
+deleted. `action ∈ {approved, corrected, rejected}`.
 
-### Categorization Tables
+### `ground_truth`
+`order_id, schema_name, code, label, level_path, origin, review_id,
+labeled_by, labeled_at`. `origin ∈ {imported, human_review}`. Upserted on key
+`(order_id, schema_name)` — one accepted label per invoice per taxonomy.
 
-All cat_ tables include a `source` field identifying the categorization method.
+## The feedback loop
 
-4. **`cat_bootstrap`** - LLM bootstrap categorizations
-   - Source: `bootstrap`
-   - Generated in `2_bootstrap.ipynb`
-   - **Requires**: `invoices`, `categories`, `prompts` (latest version)
-   - Uses LLM (Claude/GPT) for initial categorization
-   - Fields: order_id, source, pred_level_1, pred_level_2, pred_level_3, confidence, categorized_at
+1. **Classify.** LLM (grounded by pgvector-retrieved similar examples) and
+   CatBoost (trained on `ground_truth`) each write a row to `predictions`.
+2. **Surface.** The app shows predictions, their confidence, rationale,
+   retrieved candidates, and `reason`; low-confidence rows are queued for review.
+3. **Review.** A human approves / corrects / rejects → one row appended to
+   `reviews`, and the accepted label upserted into `ground_truth`.
+4. **Improve.** `ground_truth` grows → CatBoost retrains and new ground-truth
+   examples are embedded into pgvector, so both classifiers get better. Loop.
 
-5. **`cat_catboost`** - CatBoost model predictions
-   - Source: `catboost`
-   - Generated in `4_catboost.ipynb`
-   - **Requires**: `cat_reviews` (training data)
-   - Gradient boosting model
+## Pipeline notebooks
 
-6. **`cat_vectorsearch`** - Vector search predictions
-   - Source: `vectorsearch`
-   - Generated in `5_vectorsearch.ipynb`
-   - **Requires**: `cat_reviews` (training data)
-   - Uses similarity search with embeddings
+```
+0_define_taxonomies  → taxonomies + schema_registry + empty predictions/reviews/ground_truth
+1_ingest             → invoices
+2_index              → embed taxonomies + ground truth into pgvector (Unity Gateway)
+3_classify           → LLM + pgvector  → predictions(source='llm')   [MLflow-traced]
+4_train_catboost     → train on ground_truth → predictions(source='catboost')
+5_analytics          → spend + coverage + accuracy views
+```
 
-### Review Table
-
-7. **`cat_reviews`** - Append-only human reviews
-   - Training data for catboost and vectorsearch models
-   - Never deleted or updated - only appended
-   - Creates feedback loop for continuous improvement
-   - Fields:
-     - review_id: Unique review identifier
-     - order_id: Invoice being reviewed
-     - source: Which categorization method (bootstrap/catboost/vectorsearch)
-     - reviewer: User who performed review
-     - review_date: When review occurred
-     - original_level_X: Original predicted categories
-     - reviewed_level_X: Corrected categories
-     - review_status: approved | corrected | rejected
-     - comments: Review notes
-     - created_at: Timestamp
-
-## Notebooks
-
-1. **`0_generate.ipynb`** - Generate synthetic invoices with LLM descriptions
-2. **`1_eda.ipynb`** - Exploratory data analysis
-3. **`2_bootstrap.ipynb`** - LLM-based bootstrap categorization
-4. **`3_optimize.ipynb`** - Prompt optimization using subset of cat_reviews
-5. **`4_catboost.ipynb`** - Train CatBoost model on cat_reviews
-6. **`5_vectorsearch.ipynb`** - Train vector search model on cat_reviews
-
-## App
-
-The Streamlit app (`app.py`) allows users to:
-- Switch between categorization sources (bootstrap/catboost/vectorsearch)
-- Review and correct categorizations
-- Submit reviews to the append-only `cat_reviews` table
-
-Reviews are used to continuously improve the catboost and vectorsearch models.
-
-## Model Training Flow
-
-1. **Bootstrap**: LLM generates initial categorizations → `cat_bootstrap`
-2. **Review**: Humans review and correct → `cat_reviews` (append-only)
-3. **Optimize** (3_optimize.ipynb): Use subset of cat_reviews for prompt optimization
-4. **Train CatBoost**: Use cat_reviews as training data → `cat_catboost`
-5. **Train Vector Search**: Use cat_reviews as training data → `cat_vectorsearch`
-6. **Feedback Loop**: Models make new predictions → humans review → back to cat_reviews
-7. **Iterate**: More reviews → better models → higher accuracy
-
-## Feedback Loop
-
-The feedback loop ensures continuous improvement:
-
-1. Models (CatBoost/Vector Search) make predictions on new invoices
-2. Humans review predictions through the app
-3. Corrections are saved to `cat_reviews` (append-only)
-4. Models are periodically retrained on the growing review dataset
-5. Model accuracy improves over time with more human feedback
+Review is an in-app action, not a batch notebook.

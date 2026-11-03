@@ -17,7 +17,6 @@ def default_spec() -> SchemaSpec:
         label_column="category_level_3",
         level_columns=["category_level_1", "category_level_2", "category_level_3"],
         description_columns=["category_level_3_description"],
-        classify_strategy="ai_classify",
     )
 
 

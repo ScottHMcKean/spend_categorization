@@ -1,12 +1,21 @@
-"""Shared LLM helpers — wraps the Foundation Models OpenAI client with
-robust retry logic for transient errors (429s, 5xx, connection drops).
+"""Unity Gateway access — one tiny place for every model call.
 
-Use it from anywhere we make per-row LLM calls so we don't reinvent the
-backoff loop in every notebook.
+All LLM and embedding calls in this project go through **Unity Gateway**
+(governed Databricks model serving). Notebooks never build an OpenAI client
+themselves; they call `gateway_client()` once and pass it in.
+
+Two things the pipeline needs:
+  * `chat_json(...)`  — ask a chat model for a one-line JSON answer.
+  * `embed(...)`      — turn text into vectors for pgvector retrieval.
+
+Both retry a few times on transient errors (rate limits, 5xx) so a demo
+doesn't die on a blip. That's the only "clever" part, and it's contained
+in `_retry`.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import random
 import re
@@ -15,129 +24,64 @@ from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-
-# Errors we treat as transient — retry these.
-_RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
-_RETRYABLE_PATTERNS = (
-    "REQUEST_LIMIT_EXCEEDED",
-    "rate limit",
-    "ratelimit",
-    "too many requests",
-    "timeout",
-    "timed out",
-    "connection reset",
-    "connection refused",
-    "connection aborted",
-    "Server disconnected",
-    "Bad Gateway",
-    "Service Unavailable",
-)
+# HTTP statuses / messages we treat as transient and worth retrying.
+_RETRYABLE = ("429", "500", "502", "503", "504", "rate limit",
+              "timeout", "timed out", "connection", "unavailable")
 
 
-def _retry_after_seconds(err: Exception) -> Optional[float]:
-    """Extract a `Retry-After` hint from an OpenAI/HTTP error if present."""
-    headers = getattr(getattr(err, "response", None), "headers", None) or {}
-    if hasattr(headers, "get"):
-        ra = headers.get("Retry-After") or headers.get("retry-after")
-        if ra:
-            try:
-                return float(ra)
-            except (TypeError, ValueError):
-                pass
-    msg = str(err)
-    m = re.search(r"retry[ -]?after[\s:=]+(\d+(?:\.\d+)?)", msg, re.IGNORECASE)
-    if m:
-        try:
-            return float(m.group(1))
-        except ValueError:
-            pass
-    return None
+def gateway_client():
+    """Return an OpenAI-compatible client pointed at Unity Gateway."""
+    from databricks.sdk import WorkspaceClient
+    return WorkspaceClient().serving_endpoints.get_open_ai_client()
 
 
-def _is_retryable(err: Exception) -> bool:
-    status = getattr(err, "status_code", None) or getattr(
-        getattr(err, "response", None), "status_code", None
-    )
-    if status in _RETRYABLE_STATUS:
-        return True
-    msg = str(err)
-    if any(p.lower() in msg.lower() for p in _RETRYABLE_PATTERNS):
-        return True
-    if " 4" in msg and any(s in msg for s in ("429", "408", "425")):
-        return True
-    if " 5" in msg and any(s in msg for s in ("500", "502", "503", "504")):
-        return True
-    return False
-
-
-def call_with_retry(
-    fn: Callable[[], Any],
-    *,
-    max_attempts: int = 8,
-    base_delay: float = 2.0,
-    max_delay: float = 60.0,
-    on_retry: Optional[Callable[[int, Exception, float], None]] = None,
-) -> Any:
-    """Run ``fn()`` with full-jitter exponential backoff on transient errors.
-
-    Args:
-        fn: zero-arg callable performing the request.
-        max_attempts: total attempts (1 = no retry).
-        base_delay: starting backoff in seconds.
-        max_delay: cap on per-attempt sleep.
-        on_retry: optional ``(attempt, err, sleep_for)`` hook for logging.
-
-    Raises:
-        the original exception if all attempts are exhausted or the error
-        is non-retryable.
-    """
-    attempt = 0
-    while True:
-        attempt += 1
+def _retry(fn: Callable[[], Any], attempts: int = 5, base_delay: float = 2.0) -> Any:
+    """Run `fn()`, retrying transient errors with exponential backoff."""
+    for attempt in range(1, attempts + 1):
         try:
             return fn()
-        except Exception as err:  # noqa: BLE001 — we re-raise non-retryable
-            if attempt >= max_attempts or not _is_retryable(err):
+        except Exception as err:  # noqa: BLE001 - re-raised below if not transient
+            transient = any(s in str(err).lower() for s in _RETRYABLE)
+            if attempt >= attempts or not transient:
                 raise
-            hinted = _retry_after_seconds(err)
-            cap = min(max_delay, base_delay * (2 ** (attempt - 1)))
-            sleep_for = hinted if hinted is not None else random.uniform(0, cap)
-            if on_retry is not None:
-                try:
-                    on_retry(attempt, err, sleep_for)
-                except Exception:
-                    pass
-            logger.info(
-                "retryable error on attempt %d/%d (sleep %.2fs): %s",
-                attempt, max_attempts, sleep_for, err,
-            )
+            sleep_for = random.uniform(0, min(30.0, base_delay * 2 ** (attempt - 1)))
+            logger.info("retrying (%d/%d) after %.1fs: %s", attempt, attempts, sleep_for, err)
             time.sleep(sleep_for)
 
 
-def chat_with_retry(
-    client: Any,
-    *,
-    model: str,
-    messages: list[dict[str, str]],
-    max_tokens: int = 64,
-    temperature: float = 0.0,
-    max_attempts: int = 8,
-    base_delay: float = 2.0,
-    max_delay: float = 60.0,
-    on_retry: Optional[Callable[[int, Exception, float], None]] = None,
-    **extra: Any,
-) -> Any:
-    """Convenience wrapper around ``client.chat.completions.create``."""
-    return call_with_retry(
-        lambda: client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **extra,
-        ),
-        max_attempts=max_attempts,
-        base_delay=base_delay,
-        max_delay=max_delay,
-        on_retry=on_retry,
-    )
+def _extract_json(text: str) -> Optional[dict]:
+    """Pull the first JSON object out of a possibly-noisy model reply."""
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        match = re.search(r"\{[^{}]*\}", text)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except Exception:
+                return None
+    return None
+
+
+def chat_json(client, endpoint: str, system: str, user: str, max_tokens: int = 256) -> Optional[dict]:
+    """Send one chat request and return the model's reply parsed as JSON.
+
+    Returns None if the model's reply can't be parsed — the caller decides
+    what that means (we record it as a `parse_error`).
+    """
+    resp = _retry(lambda: client.chat.completions.create(
+        model=endpoint,
+        messages=[{"role": "system", "content": system},
+                  {"role": "user", "content": user}],
+        temperature=0.0,
+        max_tokens=max_tokens,
+    ))
+    return _extract_json((resp.choices[0].message.content or "").strip())
+
+
+def embed(client, endpoint: str, texts: list[str]) -> list[list[float]]:
+    """Embed a batch of texts. Returns one vector per input, in order."""
+    resp = _retry(lambda: client.embeddings.create(model=endpoint, input=texts))
+    return [d.embedding for d in resp.data]

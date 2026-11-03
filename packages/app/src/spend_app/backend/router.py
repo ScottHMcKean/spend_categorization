@@ -148,14 +148,14 @@ async def list_schemas_route(request: Request) -> list[dict]:
     if not df.empty:
         return _df_to_dicts(df)
     try:
-        from src.schemas import STRATEGY, list_schemas as _list_py_schemas
+        from src.schemas import list_schemas as _list_py_schemas
 
         return [
             {
                 "name": s.name,
                 "display_name": s.display_name,
                 "description": s.spec.description,
-                "classify_method": STRATEGY.get(s.name, "ai_classify"),
+                "classify_method": "llm_pgvector",
                 "taxonomy_table": f"{s.name}_taxonomy",
                 "level_columns": list(s.spec.level_columns),
                 "code_column": s.spec.code_column,

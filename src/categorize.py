@@ -1,645 +1,414 @@
-"""Classification strategy functions used by notebook 3 (classify).
+"""The two classifiers. Everything writes to the `predictions` table.
 
-Three strategies, picked per schema by ``schema.spec.classify_strategy``:
+1. `classify_with_llm` — embed each invoice, retrieve similar examples from
+   pgvector, and ask the LLM (via Unity Gateway) to pick a code from those
+   candidates. This is the primary classifier and scales to any taxonomy
+   size, because the model only ever sees K candidates, never the whole tree.
 
-* ``classify_ai_classify`` – hierarchical SQL ``ai_classify`` walking the
-  schema's ``level_columns`` step by step, capped at ≤20 candidates per
-  call (the primitive's hard limit). Best when the schema has ≤300 leaves
-  AND a clean tree (each level branches ≤20).
+2. `train_catboost` — train a CatBoost model on `ground_truth` and predict
+   every invoice. The supervised half of the feedback loop; it gets better
+   as ground truth grows.
 
-* ``classify_retrieval_llm`` – per invoice, query the schema's tsvector
-  index for top-K candidates, build a prompt listing those K options,
-  and let an LLM pick. Best when the leaf count is too large for any
-  hierarchical decomposition (UNSPSC, ~150k leaves).
+Both write rows with a clear `source` ('llm' or 'catboost'), a 0-1
+`confidence`, and a `status`/`reason` so an unclassified invoice explains
+itself. The LLM path is wrapped in MLflow tracing so you can see exactly
+what was retrieved and what the model replied.
 
-* ``classify_tsvector`` – top-1 from the tsvector index, no LLM. Cheap
-  baseline; useful for benchmarking the LLM strategies.
-
-All three write into the unified ``cat_predictions`` table with a clear
-``source`` label and a confidence normalized via ``src.confidence``.
+Kept deliberately small and linear — read it top to bottom.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import re
-import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
-from .confidence import (
-    normalize_llm_self_report,
-    normalize_tsvector,
-)
+from . import vectorstore
+from .confidence import from_llm_1to5, from_proba
+from .llm import chat_json, embed
 
 logger = logging.getLogger(__name__)
 
+# Columns of the `predictions` table, in order. One source of truth for the
+# MERGE so we never drift from notebook 0's CREATE TABLE.
+_PREDICTION_COLUMNS = [
+    "order_id", "schema_name", "source", "code", "label", "level_path",
+    "confidence", "status", "reason", "rationale", "candidates",
+    "model_version", "trace_id", "classified_at",
+]
 
-_AI_CLASSIFY_MAX_LABELS = 20
-_DEFAULT_MAX_DEPTH = 3
+
+def invoice_text(supplier, description, cost_centre) -> str:
+    """Build the text we classify from — one place, used everywhere."""
+    parts = [str(x) for x in (supplier, description, cost_centre) if x]
+    return " | ".join(parts)
+
+
+def _to_list(value) -> list:
+    """Coerce a level_path cell to a plain list.
+
+    pandas `itertuples()` yields `level_path` as a numpy array, so the usual
+    `value or []` idiom raises "truth value of an array is ambiguous". This
+    handles None/NaN/array/list uniformly.
+    """
+    if value is None:
+        return []
+    try:
+        return list(value)
+    except TypeError:
+        return []
+
+
+def _embed_in_batches(client, endpoint: str, texts: list[str], batch_size: int = 128) -> list[list[float]]:
+    """Embed many texts in fixed-size batches to respect endpoint limits.
+
+    Databricks embedding endpoints cap inputs per request (e.g.
+    `databricks-gte-large-en` allows 150), so keep the batch well under that.
+    """
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), batch_size):
+        vectors.extend(embed(client, endpoint, texts[start:start + batch_size]))
+    return vectors
 
 
 # ---------------------------------------------------------------------------
-# Hierarchical ai_classify
+# Building the pgvector example store (notebook 2)
 # ---------------------------------------------------------------------------
 
-def _children_by_prefix(taxonomy_pdf) -> dict:
-    """Map ``(parent_tuple,) -> sorted list[children]`` from a pandas
-    taxonomy with a ``level_path`` column."""
-    by_prefix: dict[tuple, set[str]] = {}
-    for path in taxonomy_pdf["level_path"]:
-        if path is None:
-            continue
-        path_list = list(path)
-        for i, child in enumerate(path_list):
-            prefix = tuple(path_list[:i])
-            by_prefix.setdefault(prefix, set()).add(str(child))
-    return {k: sorted(v) for k, v in by_prefix.items()}
-
-
-def _sql_array(values: list[str]) -> str:
-    """Render a Python list as a Spark SQL ARRAY(...) literal with
-    single-quoted, properly-escaped string elements."""
-    parts = []
-    for v in values:
-        s = str(v).replace("'", "''")
-        parts.append(f"'{s}'")
-    return "ARRAY(" + ", ".join(parts) + ")"
-
-
-def classify_ai_classify(
+def build_examples(
     spark,
     schema,
     *,
     catalog: str,
     schema_db: str,
     invoices_table: str = "invoices",
-    limit_rows: int = 0,
-    max_depth: int = _DEFAULT_MAX_DEPTH,
-) -> int:
-    """Hierarchical ``ai_classify`` driven by ``schema.spec.level_columns``.
+    max_taxonomy_rows: int = 10_000,
+) -> list[dict]:
+    """Collect the rows we embed into pgvector for one schema.
 
-    Writes one row per invoice into ``cat_predictions`` with
-    ``source='ai_classify'``. Returns the number of rows merged.
-
-    The hierarchy is walked top-down. At each level, for each distinct
-    predicted parent-path so far, we issue one ``ai_classify`` call
-    against that parent's children. UNION ALL the branches at each
-    level. After ``max_depth`` levels of LLM prediction, the deepest
-    leaf under the predicted path is picked deterministically.
+    Two kinds:
+      * taxonomy     — one per leaf (cold-start candidates). Skipped for very
+                       large taxonomies (e.g. UNSPSC's 150k) to bound cost;
+                       those rely on ground-truth examples instead.
+      * ground_truth — one per labelled invoice (few-shot examples).
     """
-    from src.confidence import normalize_llm_self_report  # local re-import for notebook contexts
-    spark.sql(f"USE {catalog}.{schema_db}")
-
-    tax_pdf = spark.table(f"{catalog}.{schema_db}.{schema.name}_taxonomy").toPandas()
-    by_prefix = _children_by_prefix(tax_pdf)
-    levels = list(schema.spec.level_columns) or [schema.spec.code_column]
-    depth = min(len(levels), max_depth)
-
-    limit_clause = f"LIMIT {limit_rows}" if limit_rows > 0 else ""
-    spark.sql(f"""
-    CREATE OR REPLACE TEMP VIEW _invoice_text AS
-    SELECT order_id,
-           CONCAT(
-             'Supplier: ', COALESCE(supplier, ''), '\\n',
-             'Description: ', COALESCE(description, ''), '\\n',
-             'Cost Centre: ', COALESCE(cost_centre, '')
-           ) AS text
-    FROM {catalog}.{schema_db}.{invoices_table}
-    {limit_clause}
-    """)
-
-    prev_view = "_invoice_text"
-    pred_cols: list[str] = []
-
-    for level_idx in range(depth):
-        prefixes = sorted(p for p in by_prefix if len(p) == level_idx)
-        if not prefixes:
-            break
-
-        branches: list[str] = []
-        skipped_branches: list[str] = []
-        for prefix in prefixes:
-            children = by_prefix[prefix]
-            if not children:
-                continue
-            if len(children) > _AI_CLASSIFY_MAX_LABELS:
-                logger.warning(
-                    "schema=%s level=%d prefix=%s has %d children, capping at %d",
-                    schema.name, level_idx, prefix, len(children), _AI_CLASSIFY_MAX_LABELS,
-                )
-                children = children[:_AI_CLASSIFY_MAX_LABELS]
-
-            where_parts = [
-                f"{pred_cols[i]} = '{str(v).replace(chr(39), chr(39)+chr(39))}'"
-                for i, v in enumerate(prefix)
-            ]
-            where_clause = " AND ".join(where_parts) if where_parts else "1=1"
-            cols = ["order_id", "text"] + pred_cols
-
-            if len(children) == 1:
-                # Deterministic — skip the LLM.
-                only = str(children[0]).replace("'", "''")
-                skipped_branches.append(f"""
-                  SELECT {", ".join(cols)}, '{only}' AS pred_L{level_idx}
-                  FROM {prev_view} WHERE {where_clause}
-                """)
-            else:
-                arr = _sql_array(children)
-                branches.append(f"""
-                  SELECT {", ".join(cols)},
-                         ai_classify(text, {arr}) AS pred_L{level_idx}
-                  FROM {prev_view} WHERE {where_clause}
-                """)
-
-        all_branches = branches + skipped_branches
-        if not all_branches:
-            break
-        union_sql = "\n          UNION ALL\n          ".join(all_branches)
-        next_view = f"_step_{level_idx}"
-        spark.sql(f"CREATE OR REPLACE TEMP VIEW {next_view} AS {union_sql}")
-        prev_view = next_view
-        pred_cols.append(f"pred_L{level_idx}")
-
-    # Build a deterministic leaf-picker join against the taxonomy. We rank
-    # taxonomy rows by code so the choice is stable.
-    pred_path_sql = "ARRAY(" + ", ".join(pred_cols) + ")" if pred_cols else "ARRAY()"
-    join_conds = " AND ".join(
-        f"tax.level_path[{i}] = p.{c}" for i, c in enumerate(pred_cols)
-    ) or "1=1"
-
-    spark.sql(f"""
-    CREATE OR REPLACE TEMP VIEW _ai_classify_resolved AS
-    WITH p AS (
-        SELECT * FROM {prev_view}
-    ),
-    tax AS (
-        SELECT code, label, level_path
-        FROM {catalog}.{schema_db}.{schema.name}_taxonomy
-    ),
-    joined AS (
-        SELECT p.order_id,
-               COALESCE(tax.code, {pred_cols[-1] if pred_cols else "''"}) AS code,
-               COALESCE(tax.label, {pred_cols[-1] if pred_cols else "''"}) AS label,
-               COALESCE(tax.level_path, {pred_path_sql}) AS level_path,
-               ROW_NUMBER() OVER (PARTITION BY p.order_id ORDER BY tax.code NULLS LAST) AS rn
-        FROM p LEFT JOIN tax ON {join_conds}
-    )
-    SELECT order_id, code, label, level_path FROM joined WHERE rn = 1
-    """)
-
-    spark.sql(f"""
-    MERGE INTO {catalog}.{schema_db}.cat_predictions t
-    USING (
-      SELECT order_id,
-             '{schema.name}' AS schema_name,
-             code,
-             label,
-             level_path,
-             CAST(NULL AS DOUBLE) AS confidence,
-             'hierarchical ai_classify (depth={depth})' AS rationale,
-             'ai_classify' AS source,
-             ARRAY() AS candidates,
-             current_timestamp() AS classified_at
-      FROM _ai_classify_resolved
-    ) s
-    ON t.order_id = s.order_id AND t.schema_name = s.schema_name AND t.source = s.source
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-    """)
-
-    n = spark.sql(f"""
-    SELECT COUNT(*) AS n FROM {catalog}.{schema_db}.cat_predictions
-    WHERE schema_name='{schema.name}' AND source='ai_classify'
-    """).collect()[0]["n"]
-    return int(n)
-
-
-# ---------------------------------------------------------------------------
-# Retrieval-augmented LLM (tsvector top-K → ai_query)
-# ---------------------------------------------------------------------------
-
-_STOPWORDS = {
-    "supplier", "description", "cost", "centre", "center", "for", "use",
-    "and", "the", "of", "with", "on", "services", "service", "products",
-    "product", "group", "company", "industries", "solutions", "systems",
-    "inc", "llc", "corp", "co", "ltd", "plc",
-}
-
-
-def or_tsquery(text: str) -> tuple[str, int]:
-    toks: list[str] = []
-    seen: set[str] = set()
-    for t in re.split(r"[^A-Za-z]+", text or ""):
-        tl = t.lower()
-        if len(tl) >= 4 and tl not in _STOPWORDS and tl not in seen:
-            toks.append(tl)
-            seen.add(tl)
-    return " | ".join(toks), len(toks)
-
-
-def classify_retrieval_llm(
-    spark,
-    schema,
-    *,
-    catalog: str,
-    schema_db: str,
-    pg_connect: Callable[[], Any],
-    invoices_table: str = "invoices",
-    llm_endpoint: str,
-    top_k: Optional[int] = None,
-    max_workers: int = 4,
-    progress_cb: Optional[Callable[[int, int], None]] = None,
-) -> int:
-    """Top-K retrieval → LLM classifier.
-
-    Per invoice:
-      1. Tokenize text and build OR-token tsquery (stopword-filtered).
-      2. Query Lakebase tsvector index for top-K candidates.
-      3. Send candidates + invoice to ``chat_with_retry``; the LLM
-         returns ``{"code": "...", "confidence": 1-5}``.
-      4. Normalize confidence via ``confidence.normalize_llm_self_report``.
-
-    ``pg_connect`` is a no-arg callable that returns a fresh psycopg2
-    connection (notebook 2 builds it from a Lakebase credential token).
-
-    Writes ``source='retrieval_llm'``. Returns the number of merged rows.
-    """
-    from databricks.sdk import WorkspaceClient
-    from src.llm import chat_with_retry
-
-    spark.sql(f"USE {catalog}.{schema_db}")
-    k = top_k or schema.spec.retrieval_top_k
-
-    invoices = spark.sql(f"""
-      SELECT order_id, supplier, description, cost_centre,
-             CONCAT_WS(' | ', supplier, description, cost_centre) AS qtext
-      FROM {catalog}.{schema_db}.{invoices_table}
-      ORDER BY order_id
-    """).toPandas()
-
-    table = f'"{schema_db}"."{schema.name}_text"'
-    topk_sql = f"""
-    SELECT code, label, level_path, ts_rank(tsv, q, 1) AS score
-    FROM {table}, to_tsquery('english', %s) q
-    WHERE tsv @@ q
-    ORDER BY ts_rank(tsv, q, 1) DESC
-    LIMIT {k};
-    """
-
-    client = WorkspaceClient().serving_endpoints.get_open_ai_client()
-    lock = threading.Lock()
-    done = [0]
-    misses = [0]
-
-    # Thread-local connection pool: ThreadPoolExecutor reuses worker
-    # threads, so each worker holds onto one psycopg2 connection across
-    # rows instead of opening a new one per invoice. Cuts retrieval
-    # overhead from ~1s/row of connection setup to ~0.
-    _local = threading.local()
-
-    def _get_pg_conn():
-        conn = getattr(_local, "conn", None)
-        if conn is not None:
-            try:
-                with conn.cursor() as c:
-                    c.execute("SELECT 1")
-                return conn
-            except Exception:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                _local.conn = None
-        _local.conn = pg_connect()
-        return _local.conn
-
-    def _classify_one(row) -> Optional[dict]:
-        tsq, n_tokens = or_tsquery(row["qtext"])
-        if not tsq:
-            with lock:
-                misses[0] += 1
-            return None
-
-        try:
-            conn = _get_pg_conn()
-            with conn.cursor() as cur:
-                cur.execute(topk_sql, (tsq,))
-                hits = cur.fetchall()
-        except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            with lock:
-                misses[0] += 1
-            return None
-
-        if not hits:
-            with lock:
-                misses[0] += 1
-            return None
-
-        candidates = [
-            {"code": str(h[0]), "label": h[1], "level_path": list(h[2] or []), "score": float(h[3])}
-            for h in hits
-        ]
-
-        # Build the LLM prompt.
-        cand_lines = []
-        by_code = {}
-        for c in candidates:
-            path = " > ".join(p for p in (c["level_path"] or []) if p) or c["label"]
-            cand_lines.append(f"- {c['code']}: {path}")
-            by_code[c["code"]] = c
-        cand_text = "\n".join(cand_lines)
-
-        system_prompt = (
-            f"Pick exactly ONE code from the list below for the invoice. "
-            f"Reply ONLY with a JSON object on a single line:\n"
-            f'  {{"code":"<exact code>","confidence":<integer 1-5>}}\n'
-            f"Confidence: 1=cannot tell, 5=exact match. No prose.\n\n"
-            f"CANDIDATES:\n{cand_text}"
-        )
-
-        try:
-            resp = chat_with_retry(
-                client,
-                model=llm_endpoint,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": str(row["qtext"])},
-                ],
-                temperature=0.0,
-                max_tokens=64,
-            )
-            content = (resp.choices[0].message.content or "").strip()
-            data = _extract_json(content)
-            code = str((data or {}).get("code", "")).strip() if data else None
-            conf_raw = (data or {}).get("confidence") if data else None
-        except Exception as e:
-            logger.warning("retrieval_llm: %s for %s", e, row.get("order_id"))
-            with lock:
-                misses[0] += 1
-            return None
-
-        if code not in by_code:
-            with lock:
-                misses[0] += 1
-            return None
-
-        chosen = by_code[code]
-        confidence = normalize_llm_self_report(conf_raw)
-
-        with lock:
-            done[0] += 1
-            if progress_cb is not None:
-                progress_cb(done[0], len(invoices))
-
-        return {
-            "order_id": str(row["order_id"]),
-            "schema_name": schema.name,
-            "code": chosen["code"],
-            "label": chosen["label"],
-            "level_path": chosen["level_path"],
-            "confidence": float(confidence) if confidence is not None else None,
-            "rationale": f"retrieval_llm top-{len(candidates)} via tsvector",
-            "source": "retrieval_llm",
-            "candidates": candidates,
-            "classified_at": datetime.utcnow(),
-        }
-
     rows: list[dict] = []
-    work = invoices.to_dict(orient="records")
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        for result in ex.map(_classify_one, work):
-            if result:
-                rows.append(result)
 
-    print(f"retrieval_llm: {len(rows)}/{len(invoices)} succeeded, misses={misses[0]}")
+    tax = spark.table(f"{catalog}.{schema_db}.{schema.name}_taxonomy") \
+               .select("code", "label", "level_path")
+    tax_count = tax.count()
+    if tax_count <= max_taxonomy_rows:
+        for r in tax.toPandas().itertuples():
+            path = [p for p in _to_list(r.level_path) if p]
+            rows.append({"kind": "taxonomy", "code": str(r.code), "label": r.label,
+                         "level_path": list(path),
+                         "text": " | ".join([r.label] + path)})
+    else:
+        print(f"  taxonomy has {tax_count:,} leaves (> {max_taxonomy_rows:,}); "
+              f"skipping taxonomy embeddings, using ground truth only.")
+
+    gt = spark.sql(f"""
+        SELECT g.code, g.label, g.level_path,
+               i.supplier, i.description, i.cost_centre
+        FROM {catalog}.{schema_db}.ground_truth g
+        JOIN {catalog}.{schema_db}.{invoices_table} i ON i.order_id = g.order_id
+        WHERE g.schema_name = '{schema.name}' AND g.code IS NOT NULL
+    """).toPandas()
+    for r in gt.itertuples():
+        rows.append({"kind": "ground_truth", "code": str(r.code), "label": r.label,
+                     "level_path": _to_list(r.level_path),
+                     "text": invoice_text(r.supplier, r.description, r.cost_centre)})
+    return rows
+
+
+def embed_examples_into_pgvector(
+    spark,
+    schema,
+    *,
+    catalog: str,
+    schema_db: str,
+    conn,
+    client,
+    embed_endpoint: str,
+    invoices_table: str = "invoices",
+    batch_size: int = 128,
+) -> int:
+    """Build, embed, and store this schema's examples in pgvector.
+
+    Returns the number of example rows written.
+    """
+    rows = build_examples(spark, schema, catalog=catalog, schema_db=schema_db,
+                          invoices_table=invoices_table)
     if not rows:
+        print(f"  no examples for {schema.name} yet (empty taxonomy + no ground truth).")
         return 0
 
-    from pyspark.sql.types import (
-        StructType, StructField, StringType, ArrayType, DoubleType, TimestampType,
-    )
-    pred_schema = StructType([
-        StructField("order_id", StringType()),
-        StructField("schema_name", StringType()),
-        StructField("code", StringType()),
-        StructField("label", StringType()),
-        StructField("level_path", ArrayType(StringType())),
-        StructField("confidence", DoubleType()),
-        StructField("rationale", StringType()),
-        StructField("source", StringType()),
-        StructField("candidates", ArrayType(StructType([
-            StructField("code", StringType()),
-            StructField("label", StringType()),
-            StructField("score", DoubleType()),
-        ]))),
-        StructField("classified_at", TimestampType()),
-    ])
-    # Drop level_path from candidates before writing (matches existing schema).
-    norm_rows = []
+    embeddings = _embed_in_batches(client, embed_endpoint, [r["text"] for r in rows], batch_size)
+
+    vectorstore.ensure_table(conn, schema_db, dim=len(embeddings[0]))
+    n = vectorstore.replace_examples(conn, schema_db, schema.name, rows, embeddings)
+    kinds = {}
     for r in rows:
-        norm_rows.append({
-            **r,
-            "candidates": [
-                {"code": c["code"], "label": c["label"], "score": float(c["score"])}
-                for c in r["candidates"]
-            ],
-        })
-    sdf = spark.createDataFrame(norm_rows, schema=pred_schema)
-    sdf.createOrReplaceTempView("_retrieval_llm_predictions")
-    spark.sql(f"""
-    MERGE INTO {catalog}.{schema_db}.cat_predictions t
-    USING _retrieval_llm_predictions s
-    ON t.order_id = s.order_id AND t.schema_name = s.schema_name AND t.source = s.source
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-    """)
-    return len(rows)
+        kinds[r["kind"]] = kinds.get(r["kind"], 0) + 1
+    print(f"  {schema.name}: embedded {n} examples {kinds}")
+    return n
 
 
 # ---------------------------------------------------------------------------
-# tsvector-only baseline (top-1)
+# Classifier 1: LLM grounded by pgvector retrieval
 # ---------------------------------------------------------------------------
 
-def classify_tsvector(
+def _build_prompt(candidates: list[dict]) -> str:
+    """List the retrieved candidates for the model to choose from.
+
+    Ground-truth examples are shown as 'invoice text -> code' so they act as
+    few-shot examples; taxonomy rows just list the code and its path.
+    """
+    lines = []
+    for c in candidates:
+        path = " > ".join(p for p in c["level_path"] if p) or c["label"]
+        if c["kind"] == "ground_truth":
+            lines.append(f'- {c["code"]} ({path})  ← similar invoice: "{c["text"]}"')
+        else:
+            lines.append(f'- {c["code"]} ({path})')
+    return (
+        "You are classifying a procurement invoice. Pick the ONE best code "
+        "from the candidates below. If none fit, reply with code \"\".\n"
+        'Reply with a single-line JSON object only:\n'
+        '  {"code": "<exact code or empty>", "confidence": <1-5>, "reason": "<short why>"}\n'
+        "confidence: 1=guess, 5=certain.\n\n"
+        "CANDIDATES:\n" + "\n".join(lines)
+    )
+
+
+def classify_with_llm(
     spark,
     schema,
     *,
     catalog: str,
     schema_db: str,
-    pg_connect: Callable[[], Any],
+    pg_connect: Callable[[], object],
+    client,
+    chat_endpoint: str,
+    embed_endpoint: str,
     invoices_table: str = "invoices",
     top_k: int = 20,
+    limit_rows: int = 0,
 ) -> int:
-    """Top-1 from tsvector — cheap baseline, no LLM. Writes
-    ``source='tsvector'``."""
-    spark.sql(f"USE {catalog}.{schema_db}")
+    """Classify every invoice for one schema. Writes `source='llm'` rows.
+
+    Returns the number of predictions written (classified + unclassified).
+    """
+    import mlflow
+
+    limit = f"LIMIT {limit_rows}" if limit_rows > 0 else ""
     invoices = spark.sql(f"""
-      SELECT order_id, CONCAT_WS(' | ', supplier, description, cost_centre) AS qtext
-      FROM {catalog}.{schema_db}.{invoices_table}
-      ORDER BY order_id
+        SELECT order_id, supplier, description, cost_centre
+        FROM {catalog}.{schema_db}.{invoices_table}
+        ORDER BY order_id {limit}
     """).toPandas()
 
-    table = f'"{schema_db}"."{schema.name}_text"'
-    topk_sql = f"""
-    SELECT code, label, level_path, ts_rank(tsv, q, 1) AS score
-    FROM {table}, to_tsquery('english', %s) q
-    WHERE tsv @@ q
-    ORDER BY ts_rank(tsv, q, 1) DESC
-    LIMIT {top_k};
-    """
+    texts = [invoice_text(r.supplier, r.description, r.cost_centre) for r in invoices.itertuples()]
+    vectors = _embed_in_batches(client, embed_endpoint, texts) if texts else []
 
+    conn = pg_connect()
     rows: list[dict] = []
-    misses = 0
     now = datetime.utcnow()
-    with pg_connect() as conn, conn.cursor() as cur:
-        for _, r in invoices.iterrows():
-            tsq, n_tokens = or_tsquery(r["qtext"])
-            if not tsq:
-                misses += 1
-                continue
-            try:
-                cur.execute(topk_sql, (tsq,))
-                hits = cur.fetchall()
-            except Exception:
-                conn.rollback()
-                misses += 1
-                continue
-            if not hits:
-                misses += 1
-                continue
-            cands = [
-                {"code": str(c[0]), "label": c[1], "score": float(c[3])}
-                for c in hits
-            ]
-            top_code, top_label, top_lp, top_score = hits[0]
-            confidence = normalize_tsvector([c["score"] for c in cands], n_tokens)
-            rows.append({
-                "order_id": str(r["order_id"]),
-                "schema_name": schema.name,
-                "code": str(top_code),
-                "label": top_label,
-                "level_path": list(top_lp or []),
-                "confidence": confidence,
-                "rationale": (
-                    f"tsvector OR-token (margin+strength+coverage); "
-                    f"top1={float(top_score):.4f}, hits={len(cands)}, tokens={n_tokens}"
-                ),
-                "source": "tsvector",
-                "candidates": cands,
-                "classified_at": now,
-            })
+    try:
+        for inv, text, vector in zip(invoices.itertuples(), texts, vectors):
+            rows.append(_classify_one_llm(
+                mlflow, conn, schema, inv.order_id, text, vector,
+                client, chat_endpoint, schema_db, top_k, now,
+            ))
+    finally:
+        conn.close()
 
-    print(f"tsvector: {len(rows)}/{len(invoices)} succeeded, misses={misses}")
-    if not rows:
-        return 0
-
-    from pyspark.sql.types import (
-        StructType, StructField, StringType, ArrayType, DoubleType, TimestampType,
-    )
-    pred_schema = StructType([
-        StructField("order_id", StringType()),
-        StructField("schema_name", StringType()),
-        StructField("code", StringType()),
-        StructField("label", StringType()),
-        StructField("level_path", ArrayType(StringType())),
-        StructField("confidence", DoubleType()),
-        StructField("rationale", StringType()),
-        StructField("source", StringType()),
-        StructField("candidates", ArrayType(StructType([
-            StructField("code", StringType()),
-            StructField("label", StringType()),
-            StructField("score", DoubleType()),
-        ]))),
-        StructField("classified_at", TimestampType()),
-    ])
-    sdf = spark.createDataFrame(rows, schema=pred_schema)
-    sdf.createOrReplaceTempView("_tsvector_predictions")
-    spark.sql(f"""
-    MERGE INTO {catalog}.{schema_db}.cat_predictions t
-    USING _tsvector_predictions s
-    ON t.order_id = s.order_id AND t.schema_name = s.schema_name AND t.source = s.source
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-    """)
+    write_predictions(spark, catalog, schema_db, rows)
+    classified = sum(1 for r in rows if r["status"] == "classified")
+    print(f"llm: {classified}/{len(rows)} classified for schema={schema.name}")
     return len(rows)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def _classify_one_llm(mlflow, conn, schema, order_id, text, vector,
+                      client, chat_endpoint, schema_db, top_k, now) -> dict:
+    """Classify a single invoice, wrapped in one MLflow trace."""
+    def base(**over):
+        row = {
+            "order_id": str(order_id), "schema_name": schema.name, "source": "llm",
+            "code": None, "label": None, "level_path": [], "confidence": None,
+            "status": "unclassified", "reason": "no_candidates", "rationale": None,
+            "candidates": [], "model_version": chat_endpoint, "trace_id": None,
+            "classified_at": now,
+        }
+        row.update(over)
+        return row
 
-_JSON_RE = re.compile(r"\{[^{}]*\}")
+    with mlflow.start_span(name="classify_invoice") as span:
+        span.set_inputs({"order_id": str(order_id), "text": text})
+        trace_id = _safe_trace_id(span)
+
+        candidates = vectorstore.search(conn, schema_db, schema.name, vector, top_k)
+        span.set_attributes({"candidate_count": len(candidates)})
+        if not candidates:
+            return base(trace_id=trace_id, reason="no_candidates")
+
+        by_code = {c["code"]: c for c in candidates}
+        answer = chat_json(client, chat_endpoint, _build_prompt(candidates), text)
+        span.set_outputs({"answer": answer})
+
+        if not answer:
+            return base(trace_id=trace_id, reason="parse_error",
+                        candidates=_candidate_structs(candidates))
+
+        code = str(answer.get("code", "")).strip()
+        if not code:
+            return base(trace_id=trace_id, reason="out_of_taxonomy",
+                        rationale=str(answer.get("reason") or ""),
+                        candidates=_candidate_structs(candidates))
+        if code not in by_code:
+            return base(trace_id=trace_id, reason="out_of_taxonomy",
+                        rationale=str(answer.get("reason") or ""),
+                        candidates=_candidate_structs(candidates))
+
+        chosen = by_code[code]
+        return base(
+            code=chosen["code"], label=chosen["label"], level_path=chosen["level_path"],
+            confidence=from_llm_1to5(answer.get("confidence")),
+            status="classified", reason="ok",
+            rationale=str(answer.get("reason") or ""),
+            candidates=_candidate_structs(candidates), trace_id=trace_id,
+        )
 
 
-def _extract_json(text: str) -> Optional[dict]:
-    """Best-effort extraction of a JSON object from possibly-noisy LLM
-    output (markdown fences, leading/trailing chatter)."""
-    if not text:
-        return None
+def _candidate_structs(candidates: list[dict]) -> list[dict]:
+    """Shrink retrieved candidates to the {code,label,score} we persist."""
+    return [{"code": c["code"], "label": c["label"], "score": round(1.0 - c["distance"], 4)}
+            for c in candidates]
+
+
+def _safe_trace_id(span) -> Optional[str]:
+    """Best-effort trace id; tracing must never break classification."""
     try:
-        return json.loads(text)
+        return span.trace_id
     except Exception:
-        pass
-    m = _JSON_RE.search(text)
-    if m:
-        try:
-            return json.loads(m.group(0))
-        except Exception:
-            return None
-    return None
+        return None
 
 
 # ---------------------------------------------------------------------------
-# Strategy dispatcher
+# Classifier 2: CatBoost trained on ground truth
 # ---------------------------------------------------------------------------
 
-def run_strategy_for(
+def train_catboost(
     spark,
     schema,
     *,
     catalog: str,
     schema_db: str,
     invoices_table: str = "invoices",
-    pg_connect: Optional[Callable[[], Any]] = None,
-    llm_endpoint: Optional[str] = None,
-    limit_rows: int = 0,
-) -> tuple[str, int]:
-    """Run whichever strategy the schema declares. Returns
-    ``(source_label, n_rows_written)``."""
-    strategy = schema.spec.classify_strategy
-    if strategy == "ai_classify":
-        n = classify_ai_classify(
-            spark, schema,
-            catalog=catalog, schema_db=schema_db,
-            invoices_table=invoices_table, limit_rows=limit_rows,
-        )
-        return "ai_classify", n
-    if strategy == "retrieval_llm":
-        if pg_connect is None or llm_endpoint is None:
-            raise ValueError(f"retrieval_llm needs pg_connect and llm_endpoint (schema={schema.name})")
-        n = classify_retrieval_llm(
-            spark, schema,
-            catalog=catalog, schema_db=schema_db,
-            invoices_table=invoices_table,
-            pg_connect=pg_connect, llm_endpoint=llm_endpoint,
-        )
-        return "retrieval_llm", n
-    if strategy == "tsvector":
-        if pg_connect is None:
-            raise ValueError(f"tsvector strategy needs pg_connect (schema={schema.name})")
-        n = classify_tsvector(
-            spark, schema,
-            catalog=catalog, schema_db=schema_db,
-            invoices_table=invoices_table,
-            pg_connect=pg_connect,
-        )
-        return "tsvector", n
-    raise ValueError(f"unknown classify_strategy '{strategy}' for schema {schema.name}")
+    min_rows: int = 50,
+) -> int:
+    """Train CatBoost on `ground_truth` and predict every invoice.
+
+    Writes `source='catboost'` rows. Returns the number written, or 0 when
+    there isn't enough ground truth yet (the pipeline still works without it).
+    """
+    import pandas as pd
+    from catboost import CatBoostClassifier
+
+    labelled = spark.sql(f"""
+        SELECT i.order_id,
+               i.supplier, i.description, i.cost_centre,
+               g.code
+        FROM {catalog}.{schema_db}.ground_truth g
+        JOIN {catalog}.{schema_db}.{invoices_table} i ON i.order_id = g.order_id
+        WHERE g.schema_name = '{schema.name}' AND g.code IS NOT NULL
+    """).toPandas()
+
+    if len(labelled) < min_rows:
+        print(f"catboost: only {len(labelled)} ground-truth rows for {schema.name} "
+              f"(need {min_rows}); skipping.")
+        return 0
+
+    labelled["text"] = [invoice_text(r.supplier, r.description, r.cost_centre)
+                        for r in labelled.itertuples()]
+    model = CatBoostClassifier(iterations=200, verbose=0, text_features=["text"])
+    model.fit(labelled[["text"]], labelled["code"])
+    run_id = f"catboost-{uuid.uuid4().hex[:8]}"
+
+    invoices = spark.sql(f"""
+        SELECT order_id, supplier, description, cost_centre
+        FROM {catalog}.{schema_db}.{invoices_table}
+    """).toPandas()
+    invoices["text"] = [invoice_text(r.supplier, r.description, r.cost_centre)
+                        for r in invoices.itertuples()]
+
+    codes = model.predict(invoices[["text"]]).flatten()
+    confidences = model.predict_proba(invoices[["text"]]).max(axis=1)
+
+    # Look up label + level_path for each predicted code from the taxonomy.
+    tax = spark.table(f"{catalog}.{schema_db}.{schema.name}_taxonomy") \
+               .select("code", "label", "level_path").toPandas()
+    lookup = {str(r.code): (r.label, _to_list(r.level_path)) for r in tax.itertuples()}
+
+    now = datetime.utcnow()
+    rows = []
+    for order_id, code, conf in zip(invoices["order_id"], codes, confidences):
+        label, level_path = lookup.get(str(code), (str(code), []))
+        rows.append({
+            "order_id": str(order_id), "schema_name": schema.name, "source": "catboost",
+            "code": str(code), "label": label, "level_path": level_path,
+            "confidence": from_proba(conf), "status": "classified", "reason": "ok",
+            "rationale": "CatBoost predict_proba", "candidates": [],
+            "model_version": run_id, "trace_id": None, "classified_at": now,
+        })
+
+    write_predictions(spark, catalog, schema_db, rows)
+    print(f"catboost: wrote {len(rows)} predictions for schema={schema.name}")
+    return len(rows)
+
+
+# ---------------------------------------------------------------------------
+# Shared writer
+# ---------------------------------------------------------------------------
+
+def write_predictions(spark, catalog: str, schema_db: str, rows: list[dict]) -> None:
+    """MERGE rows into `predictions`, keyed on (order_id, schema_name, source)."""
+    if not rows:
+        return
+    from pyspark.sql.types import (
+        ArrayType, DoubleType, StringType, StructField, StructType, TimestampType,
+    )
+    candidate_struct = StructType([
+        StructField("code", StringType()),
+        StructField("label", StringType()),
+        StructField("score", DoubleType()),
+    ])
+    pred_schema = StructType([
+        StructField("order_id", StringType()),
+        StructField("schema_name", StringType()),
+        StructField("source", StringType()),
+        StructField("code", StringType()),
+        StructField("label", StringType()),
+        StructField("level_path", ArrayType(StringType())),
+        StructField("confidence", DoubleType()),
+        StructField("status", StringType()),
+        StructField("reason", StringType()),
+        StructField("rationale", StringType()),
+        StructField("candidates", ArrayType(candidate_struct)),
+        StructField("model_version", StringType()),
+        StructField("trace_id", StringType()),
+        StructField("classified_at", TimestampType()),
+    ])
+    ordered = [{c: r.get(c) for c in _PREDICTION_COLUMNS} for r in rows]
+    sdf = spark.createDataFrame(ordered, schema=pred_schema)
+    sdf.createOrReplaceTempView("_new_predictions")
+    spark.sql(f"""
+        MERGE INTO {catalog}.{schema_db}.predictions t
+        USING _new_predictions s
+          ON t.order_id = s.order_id
+         AND t.schema_name = s.schema_name
+         AND t.source = s.source
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)

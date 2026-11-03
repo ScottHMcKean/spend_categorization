@@ -3,23 +3,14 @@
 A *schema* is a flat-or-hierarchical taxonomy invoices can be classified
 against (3-level internal categories, GL accounts, UNSPSC commodities, ...).
 
-Every schema produces rows in a single, schema-agnostic predictions table
-``cat_predictions``:
+Every schema produces rows in a single, schema-agnostic ``predictions``
+table (see ``docs/DESIGN.md`` and notebook 0 for the full column list),
+keyed on ``(order_id, schema_name, source)`` with ``source`` one of
+``'llm'`` or ``'catboost'``.
 
-    order_id        STRING
-    schema_name     STRING   -- e.g. 'three_level', 'gl_map', 'unspsc'
-    code            STRING   -- canonical leaf code (string-typed for safety)
-    label           STRING   -- short human label for the leaf
-    level_path      ARRAY<STRING>  -- ordered path from root to leaf
-    confidence      DOUBLE
-    rationale       STRING
-    source          STRING   -- 'ai_query' | 'ai_classify' | 'pgvector' | ...
-    candidates      ARRAY<STRUCT<code, label, score>>
-    classified_at   TIMESTAMP
-
-A schema's only job is **load its taxonomy**. The classification *strategy*
-(ai_classify, pgvector, catboost) is chosen by the runner based on schema
-size, not by the schema itself.
+A schema's only job is **load its taxonomy**. There is one classifier for
+every schema (LLM grounded by pgvector retrieval, plus optional CatBoost),
+so a schema no longer declares a strategy.
 """
 
 from __future__ import annotations
@@ -36,18 +27,8 @@ import pandas as pd
 class SchemaSpec:
     """Declarative metadata for a schema.
 
-    Strategy fields (``classify_strategy``, ``retrieval_top_k``) are the
-    *one* place a new schema declares how it should be classified. The
-    notebooks read this off the spec rather than maintaining a separate
-    STRATEGY map.
-
-    Strategies:
-      * ``ai_classify`` (default, ≤300 leaves) — hierarchical SQL
-        ``ai_classify`` walks ``level_columns`` step by step (each
-        level ≤ 20 candidates to respect the primitive's cap).
-      * ``retrieval_llm`` (>300 leaves) — tsvector top-K candidates
-        feed an ``ai_query`` STRUCT prompt; the model picks the best.
-      * ``tsvector`` — top-1 from the index, no LLM. Cheap baseline.
+    ``top_k`` is how many similar examples the LLM classifier retrieves from
+    pgvector for this taxonomy (bigger taxonomies may want a few more).
     """
 
     name: str
@@ -58,8 +39,7 @@ class SchemaSpec:
     label_column: str = "label"
     level_columns: List[str] = field(default_factory=list)
     description_columns: List[str] = field(default_factory=list)
-    classify_strategy: str = "ai_classify"
-    retrieval_top_k: int = 50
+    top_k: int = 20
 
 
 class ClassificationSchema(ABC):
