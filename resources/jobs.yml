@@ -108,6 +108,18 @@ resources:
             source: WORKSPACE
           environment_key: default
 
+        - task_key: sync
+          depends_on:
+            - task_key: evaluate
+          notebook_task:
+            notebook_path: ../notebooks/7_sync.ipynb
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              lakebase_instance: ${var.lakebase_instance}
+            source: WORKSPACE
+          environment_key: default
+
       environments:
         - environment_key: default
           spec:

@@ -24,9 +24,13 @@ full design and `../DATA_FLOW.md` for the tables.
                             │
 6_evaluate            ──►  scorecard: coverage + accuracy vs ground_truth,
                             and the reason breakdown (the tuning signal)
+                            │
+7_sync                ──►  Lakebase synced mirrors (invoices, predictions,
+                            ground_truth, taxonomies, schema_registry) +
+                            native writable `reviews` table — what the app serves
 ```
 
-`7_tune.ipynb` is a **standalone** notebook (not in the scheduled job): it
+`tune.ipynb` is a **standalone** notebook (not in the scheduled job): it
 grid-searches `top_k` against ground truth and recommends the best value.
 See `../docs/TUNING.md` for the full tuning playbook and the feedback loop.
 
