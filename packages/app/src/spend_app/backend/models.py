@@ -50,50 +50,44 @@ class InvoiceOut(BaseModel):
 class ClassificationOut(BaseModel):
     model_config = {"from_attributes": True}
     order_id: str | None = None
-    pred_level_1: str | None = None
-    pred_level_2: str | None = None
-    pred_level_3: str | None = None
-    confidence: float | None = None
+    schema_name: str | None = None
     source: str | None = None
-    description: str | None = None
-    supplier: str | None = None
-    total: float | None = None
-    category_level_1: str | None = None
-    category_level_2: str | None = None
+    code: str | None = None
+    label: str | None = None
+    level_path: list[str] | None = None
+    confidence: float | None = None
+    status: str | None = None
+    reason: str | None = None
+    rationale: str | None = None
 
 
 class ReviewIn(BaseModel):
+    """One human review of a prediction. `action` is approved | corrected |
+    rejected; code/label/level_path carry the accepted leaf (for
+    approve/correct)."""
     order_id: str
-    source: str = ""
+    schema_name: str
+    reviewed_source: str = ""
+    action: str = "corrected"
+    code: str | None = None
+    label: str | None = None
+    level_path: list[str] | None = None
     reviewer: str = "user"
-    original_level_1: str = ""
-    original_level_2: str = ""
-    original_level_3: str = ""
-    reviewed_level_1: str = ""
-    reviewed_level_2: str = ""
-    reviewed_level_3: str = ""
-    review_status: str = "corrected"
-    comments: str = ""
-    # Schema-aware leaf selection (used when reviewing taxonomies that
-    # aren't 3-level — e.g. UNSPSC, gl_map). When provided, the backend
-    # derives ``reviewed_level_1/2/3`` from ``reviewed_level_path``.
-    reviewed_code: str | None = None
-    reviewed_label: str | None = None
-    reviewed_level_path: list[str] | None = None
+    comment: str = ""
 
 
 class ReviewOut(BaseModel):
     model_config = {"from_attributes": True}
+    review_id: str | None = None
     order_id: str | None = None
-    source: str | None = None
+    schema_name: str | None = None
+    reviewed_source: str | None = None
+    action: str | None = None
+    code: str | None = None
+    label: str | None = None
+    level_path: list[str] | None = None
     reviewer: str | None = None
-    review_date: str | None = None
-    original_level_1: str | None = None
-    original_level_2: str | None = None
-    reviewed_level_1: str | None = None
-    reviewed_level_2: str | None = None
-    review_status: str | None = None
-    comments: str | None = None
+    comment: str | None = None
     created_at: str | None = None
 
 
@@ -131,25 +125,3 @@ class AccuracyResponse(BaseModel):
     categories: list[CategoryAccuracy]
 
 
-class AgentToolCall(BaseModel):
-    name: str
-    args: dict[str, Any] = {}
-    result: Any | None = None
-
-
-class AgentReviewOut(BaseModel):
-    order_id: str
-    schema_name: str
-    bootstrap: dict[str, Any]
-    suggested_code: str | None = None
-    suggested_label: str | None = None
-    suggested_level_path: list[str] | None = None
-    suggested_level_1: str | None = None
-    suggested_level_2: str | None = None
-    suggested_level_3: str | None = None
-    confidence: int | None = None
-    agrees_with_bootstrap: bool | None = None
-    rationale: str = ""
-    tool_calls: list[AgentToolCall] = []
-    error: str | None = None
-    latency_seconds: float = 0.0

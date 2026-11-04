@@ -379,32 +379,13 @@ async def list_flagged(
 # Reviews
 # ---------------------------------------------------------------------------
 
-def _normalize_review_payload(r: ReviewIn) -> dict[str, Any]:
-    """Derive reviewed_level_1/2/3 from a leaf-level pick when present.
-
-    The cat_reviews table has fixed L1/L2/L3 columns. For any taxonomy
-    depth, we map: L1 = path[0], L2 = path[1] (if present), L3 = the
-    deepest non-root level. This preserves the human's pick across
-    schemas without changing the table shape.
-    """
-    payload = r.model_dump(exclude={"reviewed_code", "reviewed_label", "reviewed_level_path"})
-    path = r.reviewed_level_path or []
-    if path:
-        payload["reviewed_level_1"] = path[0] if len(path) > 0 else ""
-        payload["reviewed_level_2"] = path[1] if len(path) > 1 else ""
-        payload["reviewed_level_3"] = path[-1] if len(path) > 2 else (path[1] if len(path) > 1 else (r.reviewed_label or ""))
-    elif r.reviewed_label and not payload.get("reviewed_level_2") and not payload.get("reviewed_level_3"):
-        payload["reviewed_level_3"] = r.reviewed_label
-    return payload
-
-
 @router.post("/reviews", response_model=dict, operation_id="submitReviews")
 async def submit_reviews(request: Request, reviews: list[ReviewIn]) -> dict:
     from src.app.reviews import write_reviews_batch
 
     cfg = request.app.state.project_config
     backend = request.app.state.backend
-    write_reviews_batch(cfg, [_normalize_review_payload(r) for r in reviews], backend=backend)
+    write_reviews_batch(cfg, [r.model_dump() for r in reviews], backend=backend)
     try:
         df = backend.execute_query(f"SELECT * FROM {cfg.app_table_path('reviews')}")
         request.app.state.data["reviews"] = df
