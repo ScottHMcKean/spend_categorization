@@ -51,20 +51,15 @@ function useSummary(schemaName: string) {
 }
 
 const SOURCE_COLORS: Record<string, string> = {
-  ai_classify: "#FF3621",
-  ai_classify_chat: "#FF7A56",
+  llm: "#FF3621",
   catboost: "#2e6e8a",
-  pgvector: "#3fa8c8",
-  tsvector: "#3fa8c8",
-  agent_review: "#22C55E",
-  ai_query_bootstrap: "#FF3621",
 };
 
 /**
  * Schema-aware Sankey:
  *   Invoices ─┬─► <source 1> (n)
  *             ├─► <source 2> (n)
- *             └─► <source N> (n)        ─► cat_predictions (sum) ─► Reviewed
+ *             └─► <source N> (n)        ─► predictions (sum) ─► Reviewed
  *                                                                ▲
  *                                                Human Reviews (n)┘
  */
@@ -84,7 +79,7 @@ function buildSankey(
   const labels: string[] = [
     `Invoices (${invoices.toLocaleString()})`,
     ...sources.map((s) => `${s.source} (${s.count.toLocaleString()})`),
-    `cat_predictions (${totalPreds.toLocaleString()})`,
+    `predictions (${totalPreds.toLocaleString()})`,
     `Human Reviews (${reviews.toLocaleString()})`,
     "Reviewed Spend",
   ];
@@ -120,7 +115,7 @@ function Index() {
   const sankey = useMemo(() => {
     if (!status) return null;
     const invoices = status.tables.find((t) => t.table === "invoices")?.rows ?? 0;
-    const reviews = status.tables.find((t) => t.table === "cat_reviews")?.rows ?? 0;
+    const reviews = status.tables.find((t) => t.table === "reviews")?.rows ?? 0;
     const bySource = (summary?.predictions_by_source ?? []) as { source: string; count: number }[];
     return buildSankey(invoices, reviews, bySource);
   }, [status, summary]);
@@ -134,7 +129,7 @@ function Index() {
             Classify procurement spend with Databricks
           </h1>
           <p className="text-lg text-[#8CA0AC] max-w-2xl mx-auto">
-            A unified pipeline combining LLM bootstrap, CatBoost models, Vector Search RAG, and human review to categorize spend across your organization.
+            A unified pipeline combining LLM classification grounded by pgvector retrieval, a CatBoost model, and human review to categorize spend across your organization.
           </p>
         </div>
       </section>
@@ -253,18 +248,18 @@ function Index() {
               },
               {
                 step: 2,
-                title: "LLM bootstrap labels",
-                desc: "Hierarchical ai_classify generates initial category labels per schema and writes them to the unified cat_predictions table.",
+                title: "Embed examples into pgvector",
+                desc: "Taxonomy leaves and labelled invoices are embedded via Unity Gateway into one pgvector store the classifier retrieves against.",
               },
               {
                 step: 3,
-                title: "Train CatBoost and index for Vector Search",
-                desc: "CatBoost learns from bootstrap labels. Lakebase pgvector + tsvector hybrid search powers UNSPSC's 150k commodity codes.",
+                title: "Classify with LLM + pgvector (and CatBoost)",
+                desc: "Each invoice retrieves similar examples from pgvector and the LLM picks a code; CatBoost adds a second prediction once ground truth exists. All rows land in the unified predictions table.",
               },
               {
                 step: 4,
                 title: "Human review low-confidence predictions",
-                desc: "Invoices flagged with low confidence are queued for an agent reviewer and human review. Corrections feed back into the model.",
+                desc: "Invoices flagged with low confidence are queued for human review. Corrections append to reviews and update ground truth, which feeds the next run.",
               },
               {
                 step: 5,

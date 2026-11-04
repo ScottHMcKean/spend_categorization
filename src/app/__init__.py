@@ -20,10 +20,8 @@ from .queries import (
     get_invoice_with_categorization,
 )
 from .reviews import (
-    write_review,
     write_reviews_batch,
     get_review_history,
-    initialize_reviews_table,
 )
 
 __all__ = [
@@ -41,8 +39,6 @@ __all__ = [
     "get_invoices_by_ids",
     "get_available_categories",
     "get_invoice_with_categorization",
-    "write_review",
     "write_reviews_batch",
     "get_review_history",
-    "initialize_reviews_table",
 ]

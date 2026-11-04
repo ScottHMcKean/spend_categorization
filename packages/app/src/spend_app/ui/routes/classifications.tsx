@@ -320,7 +320,7 @@ function Classifications() {
               No predictions for schema{" "}
               <code className="px-1.5 py-0.5 rounded bg-[#F7F9FA]">{schemaName}</code>.
             </p>
-            <p className="text-xs">Run notebooks 0–3 to populate <code>cat_predictions</code>.</p>
+            <p className="text-xs">Run notebooks 0–3 to populate <code>predictions</code>.</p>
           </div>
         )}
         {!isLoading && filtered.length > 0 && (

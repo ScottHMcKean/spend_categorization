@@ -19,8 +19,6 @@ interface Invoice {
   code?: string;
   label?: string;
   level_path?: string[];
-  pred_level_1?: string;
-  pred_level_2?: string;
   confidence?: number;
 }
 
@@ -29,28 +27,6 @@ interface TaxonomyLeaf {
   label: string;
   level_path: string[];
   description?: string;
-}
-
-interface AgentReview {
-  order_id: string;
-  schema_name: string;
-  bootstrap: {
-    code?: string | null;
-    label?: string | null;
-    level_path?: string[] | null;
-    confidence?: number | null;
-    rationale?: string | null;
-    source?: string | null;
-  };
-  suggested_code?: string | null;
-  suggested_label?: string | null;
-  suggested_level_path?: string[] | null;
-  confidence?: number | null;
-  agrees_with_bootstrap?: boolean | null;
-  rationale: string;
-  tool_calls: { name: string; args: Record<string, unknown>; result?: unknown }[];
-  error?: string | null;
-  latency_seconds: number;
 }
 
 function useInvoices(search: string) {
@@ -102,19 +78,20 @@ function useAllSchemaPredictions(orderId: string | undefined) {
   });
 }
 
+// POST /reviews — one review event per invoice, matching the backend ReviewIn.
 function useSubmitReview() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: {
       order_id: string;
+      schema_name: string;
+      reviewed_source?: string;
+      action?: string;
+      code?: string;
+      label?: string;
+      level_path?: string[];
       reviewer?: string;
-      reviewed_code?: string;
-      reviewed_label?: string;
-      reviewed_level_path?: string[];
-      original_level_1?: string;
-      original_level_2?: string;
-      original_level_3?: string;
-      comments?: string;
+      comment?: string;
     }[]) =>
       apiFetch("/reviews", {
         method: "POST",
@@ -126,17 +103,7 @@ function useSubmitReview() {
   });
 }
 
-function useRunAgent() {
-  return useMutation({
-    mutationFn: ({ schemaName, orderId }: { schemaName: string; orderId: string }) =>
-      apiFetch<AgentReview>(
-        `/agent/review/${encodeURIComponent(schemaName)}/${encodeURIComponent(orderId)}`,
-        { method: "POST" },
-      ),
-  });
-}
-
-type Tab = "search" | "flagged" | "agent" | "review";
+type Tab = "search" | "flagged" | "review";
 
 interface LeafPickerProps {
   value: TaxonomyLeaf | null;
@@ -283,109 +250,6 @@ function AllSchemasPanel({ orderId, activeSchema }: { orderId: string | undefine
   );
 }
 
-interface AgentPanelProps {
-  schemaName: string;
-  invoice: Invoice | null;
-  variant?: "card" | "inline";
-}
-
-function AgentPanel({ schemaName, invoice, variant = "card" }: AgentPanelProps) {
-  const runAgent = useRunAgent();
-  const result = runAgent.data;
-
-  if (!invoice?.order_id) {
-    return null;
-  }
-
-  return (
-    <div className={
-      variant === "inline"
-        ? "rounded-lg border border-[#E5EBF0] bg-white p-4"
-        : "mt-6 rounded-lg border border-[#E5EBF0] bg-[#F7F9FA] p-4"
-    }>
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h4 className="font-semibold text-[#0B2026]">Agent Review</h4>
-          <p className="text-xs text-[#8CA0AC]">
-            {invoice.order_id} · {invoice.supplier ?? "—"}
-          </p>
-        </div>
-        <Button
-          onClick={() => runAgent.mutate({ schemaName, orderId: invoice.order_id! })}
-          disabled={runAgent.isPending}
-          variant="secondary"
-        >
-          {runAgent.isPending ? "Reviewing…" : "Run Agent Review"}
-        </Button>
-      </div>
-      {runAgent.isPending && (
-        <p className="text-sm text-[#8CA0AC]">
-          Calling the agent — this drives the same toolset and LLM as notebook 4.
-        </p>
-      )}
-      {runAgent.isError && (
-        <p className="text-sm text-[#FF3621]">
-          {(runAgent.error as Error).message || "Agent run failed."}
-        </p>
-      )}
-      {result && (
-        <div className="space-y-3 text-sm">
-          {result.error && (
-            <p className="text-[#FF3621]">Agent error: {result.error}</p>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="bg-white p-3 rounded border border-[#E5EBF0]">
-              <p className="text-xs text-[#8CA0AC] mb-1">Bootstrap</p>
-              <p className="font-mono text-xs text-[#FF3621]">{result.bootstrap.code ?? "—"}</p>
-              <p className="font-medium text-[#0B2026]">{result.bootstrap.label ?? "—"}</p>
-              <p className="text-xs text-[#8CA0AC]">
-                {(result.bootstrap.level_path ?? []).join(" › ") || "—"}
-              </p>
-              <p className="text-xs text-[#8CA0AC] mt-1">
-                conf={result.bootstrap.confidence ?? "—"} · src={result.bootstrap.source ?? "—"}
-              </p>
-            </div>
-            <div className="bg-white p-3 rounded border border-[#E5EBF0]">
-              <p className="text-xs text-[#8CA0AC] mb-1">
-                Suggested ({result.agrees_with_bootstrap ? "agrees" : "disagrees"})
-              </p>
-              <p className="font-mono text-xs text-[#FF3621]">{result.suggested_code ?? "—"}</p>
-              <p className="font-medium text-[#0B2026]">{result.suggested_label ?? "—"}</p>
-              <p className="text-xs text-[#8CA0AC]">
-                {(result.suggested_level_path ?? []).join(" › ") || "—"}
-              </p>
-              <p className="text-xs text-[#8CA0AC] mt-1">
-                conf={result.confidence ?? "—"}/5 · {result.latency_seconds}s
-              </p>
-            </div>
-          </div>
-          {result.rationale && (
-            <div className="bg-white p-3 rounded border border-[#E5EBF0]">
-              <p className="text-xs text-[#8CA0AC] mb-1">Rationale</p>
-              <p className="text-[#0B2026]">{result.rationale}</p>
-            </div>
-          )}
-          {result.tool_calls.length > 0 && (
-            <details className="bg-white p-3 rounded border border-[#E5EBF0]">
-              <summary className="text-xs text-[#8CA0AC] cursor-pointer">
-                Tool trace ({result.tool_calls.length} calls)
-              </summary>
-              <ol className="mt-2 space-y-1 text-xs font-mono">
-                {result.tool_calls.map((tc, i) => (
-                  <li key={i} className="text-[#0B2026]">
-                    <span className="text-[#FF3621]">{tc.name}</span>(
-                    <span className="text-[#8CA0AC]">{JSON.stringify(tc.args)}</span>)
-                  </li>
-                ))}
-              </ol>
-            </details>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Review() {
   const [tab, setTab] = useState<Tab>("search");
   const [search, setSearch] = useState("");
@@ -395,7 +259,6 @@ function Review() {
   const [selectedSearch, setSelectedSearch] = useState<Set<string>>(new Set());
   const [selectedFlagged, setSelectedFlagged] = useState<Set<string>>(new Set());
   const [flaggedLoaded, setFlaggedLoaded] = useState(false);
-  const [agentTarget, setAgentTarget] = useState<Invoice | null>(null);
 
   const { schemaName } = useSchema();
   const { queue: reviewQueue, add: addToQueue, remove: removeFromQueue, clear: clearQueue } =
@@ -485,18 +348,20 @@ function Review() {
     const id = currentItem.order_id;
     const leaf = selectedLeaf[id];
     if (!leaf) return;
+    const approves =
+      !!currentItem.code && currentItem.code === leaf.code;
     submitReview.mutate(
       [
         {
           order_id: id,
+          schema_name: currentItem.schema_name ?? schemaName,
+          reviewed_source: "llm",
+          action: approves ? "approved" : "corrected",
+          code: leaf.code,
+          label: leaf.label,
+          level_path: leaf.level_path ?? [],
           reviewer: meData?.username ?? "user",
-          reviewed_code: leaf.code,
-          reviewed_label: leaf.label,
-          reviewed_level_path: leaf.level_path ?? [],
-          original_level_1: currentItem.level_path?.[0] ?? "",
-          original_level_2: currentItem.level_path?.[1] ?? "",
-          original_level_3: currentItem.level_path?.[2] ?? currentItem.label ?? "",
-          comments: reviewComment || undefined,
+          comment: reviewComment || "",
         },
       ],
       {
@@ -525,7 +390,7 @@ function Review() {
       </div>
 
       <div className="flex gap-2 border-b border-[#E5EBF0] mb-6">
-        {(["search", "flagged", "agent", "review"] as const).map((t) => (
+        {(["search", "flagged", "review"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -631,7 +496,6 @@ function Review() {
                     <th className="text-left p-3 font-semibold text-[#0B2026]">supplier</th>
                     <th className="text-left p-3 font-semibold text-[#0B2026]">predicted</th>
                     <th className="text-left p-3 font-semibold text-[#0B2026]">confidence</th>
-                    <th className="text-left p-3 font-semibold text-[#0B2026]">agent</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -660,68 +524,12 @@ function Review() {
                           )}
                         </td>
                         <td className="p-3 text-[#0B2026]">{inv.confidence != null ? inv.confidence : "--"}</td>
-                        <td className="p-3">
-                          <button
-                            onClick={() => {
-                              setAgentTarget(inv);
-                              setTab("agent");
-                            }}
-                            className="text-xs text-[#FF3621] hover:underline"
-                          >
-                            Run agent →
-                          </button>
-                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-      )}
-
-      {tab === "agent" && (
-        <div className="space-y-4">
-          <div className="rounded-lg border border-[#E5EBF0] bg-[#F7F9FA] p-4">
-            <p className="text-sm text-[#0B2026] mb-3">
-              Pick any invoice and run the review agent. Same toolset, prompt,
-              and Foundation Models endpoint as notebook 4 — the agent walks
-              the active taxonomy ({schemaName}) and reports a suggested code
-              with a 1–5 confidence and a tool-call trace.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={loadFlagged} variant="secondary" disabled={flaggedLoaded && flaggedLoading}>
-                {flaggedLoaded && flaggedLoading ? "Loading…" : "Load Flagged Invoices"}
-              </Button>
-              {(flagged ?? []).slice(0, 8).map((inv) => {
-                const id = inv.order_id ?? "";
-                return (
-                  <button
-                    key={id}
-                    onClick={() => setAgentTarget(inv)}
-                    className={`px-3 py-1.5 rounded text-xs border transition-colors ${
-                      agentTarget?.order_id === id
-                        ? "border-[#FF3621] text-[#FF3621] bg-white"
-                        : "border-[#E5EBF0] text-[#0B2026] hover:border-[#FF3621]"
-                    }`}
-                  >
-                    {id}
-                  </button>
-                );
-              })}
-            </div>
-            {!flaggedLoaded && (
-              <p className="text-xs text-[#8CA0AC] mt-2">
-                Click "Load Flagged Invoices" to populate quick-pick buttons, or queue any invoice from
-                the Search tab and switch back here.
-              </p>
-            )}
-          </div>
-          {agentTarget ? (
-            <AgentPanel schemaName={schemaName} invoice={agentTarget} variant="inline" />
-          ) : (
-            <p className="text-sm text-[#8CA0AC]">Select an invoice above to start an agent review.</p>
           )}
         </div>
       )}
@@ -801,8 +609,6 @@ function Review() {
                   Finish
                 </Button>
               </div>
-
-              <AgentPanel schemaName={schemaName} invoice={currentItem ?? null} />
             </div>
           )}
         </div>
