@@ -196,10 +196,12 @@ This scales to arbitrarily large taxonomies — the LLM only ever sees K
 candidates, never the full tree, so there is **no 20-label cap** and no
 hierarchical tree-walking.
 
-> **Open decision (please confirm):** "similar examples" — I am designing for
-> *both* corpora with a cold→warm progression (taxonomy leaves at cold start,
-> labeled invoices once ground truth exists). If you only want labeled-invoice
-> examples, say so and I drop taxonomy-embedding candidate narrowing.
+> **Resolved (20261103):** "similar examples" uses *both* corpora with a
+> cold→warm progression — taxonomy leaves at cold start, labeled invoices once
+> ground truth exists. Very large taxonomies (UNSPSC, >`max_taxonomy_rows`)
+> skip taxonomy embedding and rely on ground truth only; UNSPSC therefore
+> returns `no_candidates` until its ground truth is seeded, which the team
+> accepted.
 
 ### 5.2 CatBoost (supervised)
 Trained on `ground_truth`. Features from invoice text + structured columns.
