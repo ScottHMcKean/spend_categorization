@@ -46,3 +46,11 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local agent / dev tooling (not for sharing)
+.claude/
+.cursor/
+.ai-dev-kit/
+.databricks/
+.isaac/
+.mcp.json
