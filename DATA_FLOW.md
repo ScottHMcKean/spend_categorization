@@ -37,8 +37,8 @@ and embedding calls go through **Unity Gateway**.
 | `<name>_taxonomy` | one leaf | nb 0 | A category tree (one per schema). |
 | `schema_registry` | one schema | nb 0 | Taxonomy metadata that drives the app dropdown. |
 | `predictions` | `(order_id, schema_name, source)` | classify (nb 3), train_catboost (nb 4) | Machine predictions, `source ∈ {llm, catboost}`. |
-| `reviews` | one review event | app | Append-only audit log of human actions. |
-| `ground_truth` | `(order_id, schema_name)` | bulk import + app | Current accepted label; CatBoost training set + LLM example source. |
+| `reviews` | one review event | app | Append-only audit log of human actions (native Lakebase table). |
+| `ground_truth` | `(order_id, schema_name)` | bulk import + reconcile (nb 4) | Current accepted label; CatBoost training set + LLM example source. |
 
 ### `predictions`
 `order_id, schema_name, source, code, label, level_path, confidence,
@@ -67,9 +67,14 @@ labeled_by, labeled_at`. `origin ∈ {imported, human_review}`. Upserted on key
    CatBoost (trained on `ground_truth`) each write a row to `predictions`.
 2. **Surface.** The app shows predictions, their confidence, rationale,
    retrieved candidates, and `reason`; low-confidence rows are queued for review.
-3. **Review.** A human approves / corrects / rejects → one row appended to
-   `reviews`, and the accepted label upserted into `ground_truth`.
-4. **Improve.** `ground_truth` grows → CatBoost retrains and new ground-truth
+3. **Review.** A human approves / corrects / rejects → one row appended to the
+   native `reviews` table by the app.
+4. **Reconcile.** Before embedding (nb 2) and training (nb 4),
+   `reconcile_reviews_to_ground_truth` folds the latest approved/corrected
+   review per `(order_id, schema_name)` into Delta `ground_truth`. The app
+   cannot write `ground_truth` directly — it is a read-only synced mirror and
+   Delta is the system of record — so the loop closes here, in the pipeline.
+5. **Improve.** `ground_truth` grows → CatBoost retrains and new ground-truth
    examples are embedded into pgvector, so both classifiers get better. Loop.
 
 ## Pipeline notebooks
@@ -79,8 +84,9 @@ labeled_by, labeled_at`. `origin ∈ {imported, human_review}`. Upserted on key
 1_ingest             → invoices
 2_index              → embed taxonomies + ground truth into pgvector (Unity Gateway)
 3_classify           → LLM + pgvector  → predictions(source='llm')   [MLflow-traced]
-4_train_catboost     → train on ground_truth → predictions(source='catboost')
+4_train_catboost     → reconcile reviews → ground_truth, then train → predictions(source='catboost')
 5_analytics          → spend + coverage + accuracy views
 ```
 
-Review is an in-app action, not a batch notebook.
+Review is an in-app action, not a batch notebook; the reviews it writes are
+folded into `ground_truth` by the reconcile step at the top of nb 4.

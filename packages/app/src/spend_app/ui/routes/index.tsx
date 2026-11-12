@@ -259,7 +259,7 @@ function Index() {
               {
                 step: 4,
                 title: "Human review low-confidence predictions",
-                desc: "Invoices flagged with low confidence are queued for human review. Corrections append to reviews and update ground truth, which feeds the next run.",
+                desc: "Invoices flagged with low confidence are queued for human review. Corrections append to the reviews table; the pipeline reconciles them into ground truth, which feeds the next run.",
               },
               {
                 step: 5,

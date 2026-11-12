@@ -47,7 +47,7 @@ def test_config_app_table_path():
 def test_config_app_table_native():
     """Test native table detection."""
     config = load_config()
-    assert config.app_table_is_native("cat_reviews") is True
+    assert config.app_table_is_native("reviews") is True
     assert config.app_table_is_native("invoices") is False
 
 

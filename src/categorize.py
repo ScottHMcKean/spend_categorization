@@ -109,14 +109,15 @@ def build_examples(
               f"skipping taxonomy embeddings, using ground truth only.")
 
     gt = spark.sql(f"""
-        SELECT g.code, g.label, g.level_path,
+        SELECT g.order_id, g.code, g.label, g.level_path,
                i.supplier, i.description, i.cost_centre
         FROM {catalog}.{schema_db}.ground_truth g
         JOIN {catalog}.{schema_db}.{invoices_table} i ON i.order_id = g.order_id
         WHERE g.schema_name = '{schema.name}' AND g.code IS NOT NULL
     """).toPandas()
     for r in gt.itertuples():
-        rows.append({"kind": "ground_truth", "code": str(r.code), "label": r.label,
+        rows.append({"kind": "ground_truth", "order_id": str(r.order_id),
+                     "code": str(r.code), "label": r.label,
                      "level_path": _to_list(r.level_path),
                      "text": invoice_text(r.supplier, r.description, r.cost_centre)})
     return rows
@@ -248,7 +249,8 @@ def _classify_one_llm(mlflow, conn, schema, order_id, text, vector,
         span.set_inputs({"order_id": str(order_id), "text": text})
         trace_id = _safe_trace_id(span)
 
-        candidates = vectorstore.search(conn, schema_db, schema.name, vector, top_k)
+        candidates = vectorstore.search(conn, schema_db, schema.name, vector, top_k,
+                                        exclude_order_id=order_id)
         span.set_attributes({"candidate_count": len(candidates)})
         if not candidates:
             return base(trace_id=trace_id, reason="no_candidates")

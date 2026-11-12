@@ -108,6 +108,55 @@ def import_ground_truth(
     return len(rows)
 
 
+def reconcile_reviews_to_ground_truth(
+    spark,
+    *,
+    catalog: str,
+    schema_db: str,
+    reviews,                           # pandas DataFrame of review events
+) -> int:
+    """Fold human reviews into `ground_truth` so the loop actually closes.
+
+    The app appends review events to the native Lakebase `reviews` table; it
+    cannot write `ground_truth` directly (that is a read-only synced mirror,
+    and Delta is the system of record). This batch step reads those review
+    events, keeps the latest ``approved``/``corrected`` action per
+    ``(order_id, schema_name)``, and upserts the accepted label into Delta
+    `ground_truth`. Run it before embedding examples (nb 2) and training
+    CatBoost (nb 4); 7_sync then mirrors `ground_truth` back for serving.
+
+    `reviews` is a pandas DataFrame with the `reviews` columns. Returns the
+    number of ground-truth rows upserted.
+    """
+    if reviews is None or len(reviews) == 0:
+        print("reconcile: no review events; nothing to do.")
+        return 0
+
+    df = reviews.copy()
+    df = df[df["action"].isin(["approved", "corrected"]) & df["code"].notna()]
+    if df.empty:
+        print("reconcile: no approved/corrected reviews with a code.")
+        return 0
+
+    # Latest review wins per (order_id, schema_name).
+    df = df.sort_values("created_at").drop_duplicates(
+        subset=["order_id", "schema_name"], keep="last"
+    )
+
+    rows = [{
+        "order_id": str(r.order_id), "schema_name": r.schema_name,
+        "code": str(r.code), "label": getattr(r, "label", None),
+        "level_path": _to_list(getattr(r, "level_path", None)),
+        "origin": "human_review", "review_id": getattr(r, "review_id", None),
+        "labeled_by": getattr(r, "reviewer", "user"),
+        "labeled_at": getattr(r, "created_at", datetime.utcnow()),
+    } for r in df.itertuples()]
+
+    _upsert_ground_truth(spark, catalog, schema_db, rows)
+    print(f"reconcile: upserted {len(rows)} ground_truth rows from reviews.")
+    return len(rows)
+
+
 # ---------------------------------------------------------------------------
 # Writers
 # ---------------------------------------------------------------------------

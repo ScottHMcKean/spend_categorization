@@ -32,15 +32,31 @@ def _vec(embedding: list[float]) -> str:
 
 
 def ensure_table(conn, pg_schema: str, dim: int) -> None:
-    """Create the `examples` table (and its vector index) if missing."""
+    """Create the `examples` table (and its vector index) if missing.
+
+    If the table already exists with a different embedding dimension, raise a
+    clear error instead of letting later ``::vector`` inserts fail opaquely
+    (e.g. switching embed_endpoint to a model with a different vector width).
+    """
     with conn.cursor() as cur:
         cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
         cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{pg_schema}"')
+
+        existing_dim = _embedding_dim(cur, pg_schema)
+        if existing_dim is not None and existing_dim != dim:
+            raise ValueError(
+                f'"{pg_schema}".examples already exists with vector({existing_dim}), '
+                f"but this run produces {dim}-dim embeddings. The embedding model "
+                f"changed width; drop the table and re-run notebook 2 to rebuild it: "
+                f'DROP TABLE "{pg_schema}".examples;'
+            )
+
         cur.execute(f'''
             CREATE TABLE IF NOT EXISTS "{pg_schema}".examples (
                 id          BIGSERIAL PRIMARY KEY,
                 schema_name TEXT,
                 kind        TEXT,          -- 'taxonomy' | 'ground_truth'
+                order_id    TEXT,          -- source invoice for ground_truth rows (NULL for taxonomy)
                 code        TEXT,
                 label       TEXT,
                 level_path  TEXT[],
@@ -48,6 +64,8 @@ def ensure_table(conn, pg_schema: str, dim: int) -> None:
                 embedding   vector({dim})
             )
         ''')
+        # Backfill the column on tables created before order_id existed.
+        cur.execute(f'ALTER TABLE "{pg_schema}".examples ADD COLUMN IF NOT EXISTS order_id TEXT')
         cur.execute(f'''
             CREATE INDEX IF NOT EXISTS examples_embedding_idx
             ON "{pg_schema}".examples USING hnsw (embedding vector_cosine_ops)
@@ -55,50 +73,80 @@ def ensure_table(conn, pg_schema: str, dim: int) -> None:
     conn.commit()
 
 
+def _embedding_dim(cur, pg_schema: str) -> int | None:
+    """Return the declared dimension of examples.embedding, or None if absent."""
+    cur.execute(
+        """
+        SELECT a.atttypmod
+        FROM pg_attribute a
+        JOIN pg_class c ON c.oid = a.attrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = %s AND c.relname = 'examples' AND a.attname = 'embedding'
+        """,
+        (pg_schema,),
+    )
+    row = cur.fetchone()
+    # pgvector stores the dimension directly in atttypmod (no -4 VARHDRSZ offset).
+    if row and row[0] is not None and row[0] > 0:
+        return int(row[0])
+    return None
+
+
 def replace_examples(conn, pg_schema: str, schema_name: str, rows: list[dict],
                      embeddings: list[list[float]]) -> int:
     """Delete this schema's existing examples and insert a fresh set.
 
     `rows` and `embeddings` line up positionally. Each row is a dict with
-    keys: kind, code, label, level_path, text.
+    keys: kind, code, label, level_path, text, and (for ground_truth) order_id.
     """
     with conn.cursor() as cur:
         cur.execute(f'DELETE FROM "{pg_schema}".examples WHERE schema_name = %s', (schema_name,))
         values = [
-            (schema_name, r["kind"], r["code"], r["label"],
+            (schema_name, r["kind"], r.get("order_id"), r["code"], r["label"],
              list(r["level_path"] or []), r["text"], _vec(emb))
             for r, emb in zip(rows, embeddings)
         ]
         execute_values(
             cur,
             f'INSERT INTO "{pg_schema}".examples '
-            f'(schema_name, kind, code, label, level_path, text, embedding) VALUES %s',
+            f'(schema_name, kind, order_id, code, label, level_path, text, embedding) VALUES %s',
             values,
-            template="(%s,%s,%s,%s,%s,%s,%s::vector)",
+            template="(%s,%s,%s,%s,%s,%s,%s,%s::vector)",
         )
     conn.commit()
     return len(values)
 
 
-def search(conn, pg_schema: str, schema_name: str, embedding: list[float], k: int) -> list[dict]:
+def search(conn, pg_schema: str, schema_name: str, embedding: list[float], k: int,
+           exclude_order_id: str | None = None) -> list[dict]:
     """Return the `k` nearest examples for one schema, closest first.
 
     Ordered purely by cosine distance so the HNSW index is used. Ground-truth
     examples win when they are genuinely closest (they usually are once they
     exist) rather than being forced ahead of closer taxonomy leaves.
+
+    When classifying an invoice that is itself in ground truth, pass its
+    `exclude_order_id` so its own example row is not retrieved — otherwise the
+    model is handed the answer (distance ~0) and the scorecard is inflated.
     """
     vec = _vec(embedding)
+    params: list = [vec, schema_name]
+    exclude_sql = ""
+    if exclude_order_id is not None:
+        exclude_sql = "AND (order_id IS NULL OR order_id <> %s)"
+        params.append(str(exclude_order_id))
+    params += [vec, k]
     with conn.cursor() as cur:
         cur.execute(
             f'''
             SELECT code, label, level_path, text, kind,
                    embedding <=> %s::vector AS distance
             FROM "{pg_schema}".examples
-            WHERE schema_name = %s
+            WHERE schema_name = %s {exclude_sql}
             ORDER BY embedding <=> %s::vector ASC
             LIMIT %s
             ''',
-            (vec, schema_name, vec, k),
+            tuple(params),
         )
         return [
             {"code": r[0], "label": r[1], "level_path": list(r[2] or []),

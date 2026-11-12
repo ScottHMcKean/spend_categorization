@@ -35,13 +35,17 @@ def write_reviews_batch(
         backend = get_backend()
 
     table = _reviews_path(config)
+    # Use :name placeholders — both backends normalise these (LakebaseBackend
+    # rewrites :name -> %(name)s for psycopg2; ServerlessBackend substitutes
+    # literals). Hard-coding %(name)s only works on psycopg2 and is sent raw to
+    # the SQL warehouse on the serverless fallback path.
     query = f"""
         INSERT INTO {table}
         (review_id, order_id, schema_name, reviewed_source, action,
          code, label, level_path, reviewer, comment, created_at)
         VALUES
-        (%(review_id)s, %(order_id)s, %(schema_name)s, %(reviewed_source)s, %(action)s,
-         %(code)s, %(label)s, %(level_path)s, %(reviewer)s, %(comment)s, %(created_at)s)
+        (:review_id, :order_id, :schema_name, :reviewed_source, :action,
+         :code, :label, :level_path, :reviewer, :comment, :created_at)
     """
     now = datetime.now(timezone.utc)
     queries = []
@@ -67,6 +71,19 @@ def write_reviews_batch(
         for q, params in queries:
             backend.execute_write(q, params)
     logger.info(f"Wrote {len(queries)} review events")
+
+
+def read_reviews(config: Config, backend: Optional[DatabaseBackend] = None):
+    """Return all review events as a pandas DataFrame.
+
+    Used by the pipeline reconcile step (see
+    `src.feedback.reconcile_reviews_to_ground_truth`) to pull the app-written
+    review log out of the native Lakebase table and fold it into ground truth.
+    """
+    if backend is None:
+        from .database import get_backend
+        backend = get_backend()
+    return backend.execute_query(f"SELECT * FROM {_reviews_path(config)}")
 
 
 def get_review_history(

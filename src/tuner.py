@@ -55,14 +55,16 @@ def tune_top_k(
     texts = [invoice_text(r.supplier, r.description, r.cost_centre) for r in sample.itertuples()]
     vectors = _embed_in_batches(client, embed_endpoint, texts)
     truths = list(sample["truth"].astype(str))
+    order_ids = list(sample["order_id"].astype(str))
 
     conn = pg_connect()
     results: list[dict] = []
     try:
         for k in grid:
             correct = classified = 0
-            for text, vec, truth in zip(texts, vectors, truths):
-                code = _predict_one(conn, schema_db, schema.name, vec, text, client, chat_endpoint, k)
+            for text, vec, truth, oid in zip(texts, vectors, truths, order_ids):
+                code = _predict_one(conn, schema_db, schema.name, vec, text, client, chat_endpoint, k,
+                                    exclude_order_id=oid)
                 if code is not None:
                     classified += 1
                     if str(code) == truth:
@@ -86,9 +88,11 @@ def tune_top_k(
     return results
 
 
-def _predict_one(conn, schema_db, schema_name, vector, text, client, chat_endpoint, top_k):
+def _predict_one(conn, schema_db, schema_name, vector, text, client, chat_endpoint, top_k,
+                 exclude_order_id=None):
     """Classify one invoice for a given top_k. Returns the chosen code or None."""
-    candidates = vectorstore.search(conn, schema_db, schema_name, vector, top_k)
+    candidates = vectorstore.search(conn, schema_db, schema_name, vector, top_k,
+                                    exclude_order_id=exclude_order_id)
     if not candidates:
         return None
     by_code = {c["code"]: c for c in candidates}
