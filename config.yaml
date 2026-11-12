@@ -132,16 +132,19 @@ app:
     actual_l3: actual_level_3
     confidence: confidence
 
-  # Tables loaded into the app at startup. After the v2 refactor every
-  # prediction lives in `cat_predictions`; the app only needs the unified
-  # tables, taxonomies, and reviews.
+  # Tables the app loads at startup (labels map onto the Lakebase mirrors
+  # created by notebook 7_sync). Reads come from synced mirrors; `reviews`
+  # is a native writable table the app appends corrections to.
   tables:
     invoices:
       table: invoices
       description: Source invoices
-    cat_predictions:
-      table: cat_predictions
-      description: Unified per-(order_id, schema_name, source) predictions
+    predictions:
+      table: predictions
+      description: Per-(order_id, schema_name, source) machine predictions
+    ground_truth:
+      table: ground_truth
+      description: Accepted label per (order_id, schema_name) — CatBoost training set
     schema_registry:
       table: schema_registry
       description: Registered classification schemas
@@ -154,9 +157,9 @@ app:
     unspsc_taxonomy:
       table: unspsc_taxonomy
       description: Normalized UNSPSC commodity taxonomy (~150k rows; synced for hierarchy browsing)
-    cat_reviews:
-      table: cat_reviews
-      description: Human review corrections
+    reviews:
+      table: reviews
+      description: Human review events (append-only)
       native: true  # not a synced table
 
   search:

@@ -115,7 +115,6 @@ class Config(BaseModel):
     cat_catboost: str = "cat_catboost"
     cat_vectorsearch: str = "cat_vectorsearch"
     cat_agent: str = "cat_agent"
-    cat_reviews: str = "cat_reviews"
 
     # Active categorization source
     categorization_source: Literal["bootstrap", "catboost", "vectorsearch"] = "bootstrap"
@@ -204,10 +203,6 @@ class Config(BaseModel):
         return self.full_table_path(self.cat_agent)
 
     @property
-    def full_cat_reviews_table_path(self) -> str:
-        return self.full_table_path(self.cat_reviews)
-
-    @property
     def active_categorization_table_path(self) -> str:
         source_map = {
             "bootstrap": self.full_cat_bootstrap_table_path,
@@ -281,7 +276,6 @@ class Config(BaseModel):
             cat_catboost=cat_tables.get("cat_catboost", "cat_catboost"),
             cat_vectorsearch=cat_tables.get("cat_vectorsearch", "cat_vectorsearch"),
             cat_agent=cat_tables.get("cat_agent", "cat_agent"),
-            cat_reviews=cat_tables.get("cat_reviews", "cat_reviews"),
             categorization_source=app.get("categorization_source", "bootstrap"),
             small_llm_endpoint=gen_data["small_llm_endpoint"],
             large_llm_endpoint=gen_data["large_llm_endpoint"],

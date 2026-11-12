@@ -7,7 +7,6 @@ import pytest
 
 from src.schemas import (
     GLMapSchema,
-    STRATEGY,
     ThreeLevelSchema,
     UNSPSCSchema,
     get_schema,
@@ -67,7 +66,6 @@ def test_get_schema_unknown_raises() -> None:
         get_schema("does_not_exist")
 
 
-def test_strategy_map() -> None:
-    assert STRATEGY["three_level"] == "ai_query"
-    assert STRATEGY["gl_map"] == "ai_query"
-    assert STRATEGY["unspsc"] == "pgvector"
+def test_schemas_declare_top_k() -> None:
+    for s in list_schemas():
+        assert isinstance(s.spec.top_k, int) and s.spec.top_k > 0

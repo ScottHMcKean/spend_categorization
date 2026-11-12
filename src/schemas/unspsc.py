@@ -11,14 +11,13 @@ def default_spec() -> SchemaSpec:
     return SchemaSpec(
         name="unspsc",
         display_name="UNSPSC Commodity Codes",
-        description="UN Standard Products and Services Code, ~150k commodity-level codes. Hybrid pgvector + tsvector search.",
+        description="UN Standard Products and Services Code, ~150k commodity-level codes. Classified via LLM + pgvector retrieval.",
         source_path="assets/unspsc-english-v260801.1.xlsx",
         code_column="Commodity",
         label_column="Commodity Title",
         level_columns=["Segment Title", "Family Title", "Class Title", "Commodity Title"],
         description_columns=["Commodity Definition", "Class Definition", "Synonym"],
-        classify_strategy="retrieval_llm",
-        retrieval_top_k=50,
+        top_k=30,
     )
 
 

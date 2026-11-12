@@ -42,7 +42,7 @@ class TestLakebaseRewrite:
             instance="test",
             catalog="shm",
             schema_name="spend",
-            native_tables={"cat_reviews"},
+            native_tables={"reviews"},
         )
         result = backend._rewrite_query("SELECT * FROM shm.spend.invoices")
         assert result == 'SELECT * FROM "spend"."invoices_synced"'
@@ -52,10 +52,10 @@ class TestLakebaseRewrite:
             instance="test",
             catalog="shm",
             schema_name="spend",
-            native_tables={"cat_reviews"},
+            native_tables={"reviews"},
         )
-        result = backend._rewrite_query("SELECT * FROM shm.spend.cat_reviews")
-        assert result == 'SELECT * FROM "spend"."cat_reviews"'
+        result = backend._rewrite_query("SELECT * FROM shm.spend.reviews")
+        assert result == 'SELECT * FROM "spend"."reviews"'
 
     def test_rewrite_no_catalog_returns_unchanged(self):
         backend = LakebaseBackend(instance="test", catalog="", schema_name="")

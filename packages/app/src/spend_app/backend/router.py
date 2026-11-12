@@ -17,8 +17,6 @@ from fastapi import HTTPException, Request
 from .core import create_router
 from .models import (
     AccuracyResponse,
-    AgentReviewOut,
-    AgentToolCall,
     AnalyticsSummary,
     CategoryAccuracy,
     ReviewIn,
@@ -53,7 +51,7 @@ def _safe_col(df: pd.DataFrame, col: str) -> bool:
 
 
 def _predictions(request: Request, schema_name: str | None = None) -> pd.DataFrame:
-    df: pd.DataFrame = request.app.state.data.get("cat_predictions", pd.DataFrame())
+    df: pd.DataFrame = request.app.state.data.get("predictions", pd.DataFrame())
     if df.empty:
         return df
     if schema_name and "schema_name" in df.columns:
@@ -148,14 +146,14 @@ async def list_schemas_route(request: Request) -> list[dict]:
     if not df.empty:
         return _df_to_dicts(df)
     try:
-        from src.schemas import STRATEGY, list_schemas as _list_py_schemas
+        from src.schemas import list_schemas as _list_py_schemas
 
         return [
             {
                 "name": s.name,
                 "display_name": s.display_name,
                 "description": s.spec.description,
-                "classify_method": STRATEGY.get(s.name, "ai_classify"),
+                "classify_method": "llm_pgvector",
                 "taxonomy_table": f"{s.name}_taxonomy",
                 "level_columns": list(s.spec.level_columns),
                 "code_column": s.spec.code_column,
@@ -284,7 +282,7 @@ async def get_predictions_for_invoice(
 )
 async def get_invoice_predictions(request: Request, order_id: str) -> dict:
     """Return all predictions for one invoice, grouped by schema_name."""
-    df: pd.DataFrame = request.app.state.data.get("cat_predictions", pd.DataFrame())
+    df: pd.DataFrame = request.app.state.data.get("predictions", pd.DataFrame())
     if df.empty:
         return {}
     sub = df[df["order_id"] == order_id]
@@ -381,226 +379,19 @@ async def list_flagged(
 # Reviews
 # ---------------------------------------------------------------------------
 
-def _normalize_review_payload(r: ReviewIn) -> dict[str, Any]:
-    """Derive reviewed_level_1/2/3 from a leaf-level pick when present.
-
-    The cat_reviews table has fixed L1/L2/L3 columns. For any taxonomy
-    depth, we map: L1 = path[0], L2 = path[1] (if present), L3 = the
-    deepest non-root level. This preserves the human's pick across
-    schemas without changing the table shape.
-    """
-    payload = r.model_dump(exclude={"reviewed_code", "reviewed_label", "reviewed_level_path"})
-    path = r.reviewed_level_path or []
-    if path:
-        payload["reviewed_level_1"] = path[0] if len(path) > 0 else ""
-        payload["reviewed_level_2"] = path[1] if len(path) > 1 else ""
-        payload["reviewed_level_3"] = path[-1] if len(path) > 2 else (path[1] if len(path) > 1 else (r.reviewed_label or ""))
-    elif r.reviewed_label and not payload.get("reviewed_level_2") and not payload.get("reviewed_level_3"):
-        payload["reviewed_level_3"] = r.reviewed_label
-    return payload
-
-
 @router.post("/reviews", response_model=dict, operation_id="submitReviews")
 async def submit_reviews(request: Request, reviews: list[ReviewIn]) -> dict:
     from src.app.reviews import write_reviews_batch
 
     cfg = request.app.state.project_config
     backend = request.app.state.backend
-    write_reviews_batch(cfg, [_normalize_review_payload(r) for r in reviews], backend=backend)
+    write_reviews_batch(cfg, [r.model_dump() for r in reviews], backend=backend)
     try:
-        df = backend.execute_query(f"SELECT * FROM {cfg.app_table_path('cat_reviews')}")
-        request.app.state.data["cat_reviews"] = df
+        df = backend.execute_query(f"SELECT * FROM {cfg.app_table_path('reviews')}")
+        request.app.state.data["reviews"] = df
     except Exception:
         pass
     return {"submitted": len(reviews)}
-
-
-# ---------------------------------------------------------------------------
-# Agent review (single invoice, on-demand)
-# ---------------------------------------------------------------------------
-
-
-def _build_taxonomy_toolset(request: Request, schema_name: str):
-    """Lazily load the schema's taxonomy as a TaxonomyToolset.
-
-    Cached on app.state to avoid rebuilding on every call.
-    """
-    from src.agents.tools import TaxonomyToolset
-
-    cache: dict[str, Any] = request.app.state.__dict__.setdefault("_toolset_cache", {})
-    if schema_name in cache:
-        return cache[schema_name]
-
-    df = _taxonomy_df(request, schema_name)
-    if df.empty:
-        raise HTTPException(
-            status_code=404, detail=f"taxonomy unavailable for schema '{schema_name}'"
-        )
-    toolset = TaxonomyToolset(taxonomy=df)
-    cache[schema_name] = toolset
-    return toolset
-
-
-def _coerce_path(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(v) for v in value if v is not None and str(v).strip()]
-    try:
-        return [str(v) for v in list(value) if v is not None and str(v).strip()]
-    except TypeError:
-        return []
-
-
-@router.post(
-    "/agent/review/{schema_name}/{order_id}",
-    response_model=AgentReviewOut,
-    operation_id="runAgentReview",
-)
-async def run_agent_review(
-    request: Request,
-    schema_name: str,
-    order_id: str,
-    source: str | None = None,
-) -> AgentReviewOut:
-    try:
-        return await _run_agent_review_impl(request, schema_name, order_id, source)
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001 — surface the real cause to the UI
-        import traceback as _tb
-
-        tb = _tb.format_exc()
-        raise HTTPException(
-            status_code=500,
-            detail=f"agent review failed: {type(e).__name__}: {e}\n{tb[-1500:]}",
-        )
-
-
-async def _run_agent_review_impl(
-    request: Request,
-    schema_name: str,
-    order_id: str,
-    source: str | None,
-) -> AgentReviewOut:
-    """Run the review agent on a single invoice for the active schema.
-
-    Uses the same code path as notebook 4 — same toolset, same model
-    endpoint — so what the user sees in-app matches the offline
-    pipeline exactly.
-    """
-    from src.agents.review_agent import TaxonomyReviewAgent
-
-    cfg = request.app.state.project_config
-    c = cfg.col
-
-    invoices: pd.DataFrame = request.app.state.data.get("invoices", pd.DataFrame())
-    inv_match = invoices[invoices[c.id] == order_id] if not invoices.empty and c.id in invoices.columns else pd.DataFrame()
-    if inv_match.empty:
-        raise HTTPException(status_code=404, detail=f"order_id '{order_id}' not in invoices")
-    inv = inv_match.iloc[0]
-
-    preds = _predictions(request, schema_name)
-    pred_match = preds[preds["order_id"] == order_id] if not preds.empty else pd.DataFrame()
-    if source and not pred_match.empty and "source" in pred_match.columns:
-        pred_match = pred_match[pred_match["source"] == source]
-    if pred_match.empty:
-        # No bootstrap prediction yet -- the agent reviews from scratch.
-        boot_code = boot_label = None
-        boot_path: list[str] = []
-        boot_conf = None
-        boot_rationale = None
-        boot_source = source or ""
-    else:
-        # Pick the highest-confidence prediction so the agent reviews the
-        # canonical one rather than an arbitrary row.
-        pm = pred_match.copy()
-        if "confidence" in pm.columns:
-            pm["_conf"] = pd.to_numeric(pm["confidence"], errors="coerce").fillna(0)
-            pm = pm.sort_values("_conf", ascending=False)
-        row = pm.iloc[0]
-        boot_code = row.get("code")
-        boot_label = row.get("label")
-        boot_path = _coerce_path(row.get("level_path"))
-        boot_conf = row.get("confidence")
-        try:
-            boot_conf = float(boot_conf) if boot_conf is not None else None
-        except (TypeError, ValueError):
-            boot_conf = None
-        boot_rationale = row.get("rationale")
-        boot_source = row.get("source") or ""
-
-    invoice_text = " | ".join(
-        str(inv.get(col, "")).strip()
-        for col in (c.supplier, c.description, "cost_centre", c.amount)
-        if col in inv.index and inv.get(col) is not None and str(inv.get(col)).strip()
-    )
-
-    toolset = _build_taxonomy_toolset(request, schema_name)
-
-    # Resolve LLM client + model. Fall back gracefully if Foundation
-    # Models aren't reachable (e.g. local dev without Databricks creds).
-    try:
-        from databricks.sdk import WorkspaceClient
-
-        client = WorkspaceClient().serving_endpoints.get_open_ai_client()
-        model = cfg.large_llm_endpoint
-    except Exception as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"LLM client unavailable: {type(e).__name__}: {e}",
-        )
-
-    # Try to resolve a friendlier display name for the system prompt.
-    try:
-        from src.schemas import get_schema
-
-        display_name = get_schema(schema_name).display_name
-    except Exception:
-        display_name = schema_name
-
-    agent = TaxonomyReviewAgent(
-        openai_client=client,
-        model=model,
-        toolset=toolset,
-        schema_display_name=display_name,
-        max_steps=12,
-    )
-
-    result = agent.review(
-        order_id=order_id,
-        invoice_text=invoice_text,
-        bootstrap_code=str(boot_code) if boot_code else None,
-        bootstrap_label=str(boot_label) if boot_label else None,
-        bootstrap_level_path=boot_path,
-        bootstrap_confidence=boot_conf,
-        bootstrap_rationale=str(boot_rationale) if boot_rationale else None,
-    )
-
-    return AgentReviewOut(
-        order_id=order_id,
-        schema_name=schema_name,
-        bootstrap={
-            "code": boot_code,
-            "label": boot_label,
-            "level_path": boot_path,
-            "confidence": boot_conf,
-            "rationale": boot_rationale,
-            "source": boot_source,
-        },
-        suggested_code=result.suggested_code,
-        suggested_label=result.suggested_label,
-        suggested_level_path=result.suggested_level_path,
-        suggested_level_1=result.suggested_level_1,
-        suggested_level_2=result.suggested_level_2,
-        suggested_level_3=result.suggested_level_3,
-        confidence=result.agent_confidence,
-        agrees_with_bootstrap=result.agrees_with_bootstrap,
-        rationale=result.rationale or "",
-        tool_calls=[AgentToolCall(**tc) for tc in result.tool_calls],
-        error=result.error,
-        latency_seconds=result.latency_seconds,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -623,7 +414,7 @@ async def analytics_summary(
     c = cfg.col
     data = request.app.state.data
     invoices_full = data.get("invoices", pd.DataFrame())
-    reviews = data.get("cat_reviews", pd.DataFrame())
+    reviews = data.get("reviews", pd.DataFrame())
     preds = _predictions(request, schema_name)
 
     predictions_by_source: list[dict[str, Any]] = []

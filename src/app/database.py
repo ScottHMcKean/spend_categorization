@@ -247,11 +247,34 @@ class ServerlessBackend(DatabaseBackend):
     def warehouse_id(self) -> str:
         return self._warehouse_id or os.getenv("DATABRICKS_WAREHOUSE_ID", "")
 
+    @staticmethod
+    def _literal(val: Any) -> str:
+        """Render a Python value as a SQL literal for inline substitution.
+
+        Handles NULLs, arrays (``ARRAY[...]``), timestamps, and quote-escaping
+        so a parameter like ``level_path`` (a list) or a ``None`` produces valid
+        SQL instead of ``['a']`` / ``None``.
+        """
+        import datetime as _dt
+
+        if val is None:
+            return "NULL"
+        if isinstance(val, bool):
+            return "TRUE" if val else "FALSE"
+        if isinstance(val, (int, float)):
+            return str(val)
+        if isinstance(val, (list, tuple)):
+            return "ARRAY[" + ", ".join(ServerlessBackend._literal(v) for v in val) + "]"
+        if isinstance(val, (_dt.datetime, _dt.date)):
+            return "'" + val.isoformat() + "'"
+        return "'" + str(val).replace("'", "''") + "'"
+
     def _substitute_params(self, query: str, parameters: Optional[Dict[str, Any]]) -> str:
         if parameters:
-            for key, val in parameters.items():
-                replacement = f"'{val}'" if isinstance(val, str) else str(val)
-                query = query.replace(f":{key}", replacement)
+            # Replace longest keys first so a short name (e.g. :code) can't clip
+            # a longer one that shares its prefix.
+            for key in sorted(parameters, key=len, reverse=True):
+                query = query.replace(f":{key}", self._literal(parameters[key]))
         return query
 
     def execute_query(
